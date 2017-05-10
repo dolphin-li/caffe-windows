@@ -56,7 +56,7 @@
     </CudaCompile>
     <ClCompile>
       <DisableSpecificWarnings>4661;4005;4812;4715;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <AdditionalIncludeDirectories>$(ProjectDir)\..\..\src\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)\..\..\src\;$(ProjectDir)\..\..\3rdparty\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Lib>
       <AdditionalOptions>/ignore:4221 %(AdditionalOptions)</AdditionalOptions>
@@ -134,6 +134,7 @@
     <ClCompile Include="..\..\src\caffe\layers\general_constrastive_loss_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\general_triplet_loss_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\gram_layer.cpp" />
+    <ClCompile Include="..\..\src\caffe\layers\hdf5_bit_data_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\hdf5_data_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\hdf5_output_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\hinge_loss_layer.cpp" />
@@ -269,6 +270,7 @@
     <ClInclude Include="..\..\include\caffe\layers\filter_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\flatten_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\flip_layer.hpp" />
+    <ClInclude Include="..\..\include\caffe\layers\hdf5_bit_data_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\hdf5_data_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\hdf5_output_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\hinge_loss_layer.hpp" />
@@ -411,6 +413,7 @@
     <CudaCompile Include="..\..\src\caffe\layers\cudnn_bn_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\flip_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\gram_layer.cu" />
+    <CudaCompile Include="..\..\src\caffe\layers\hdf5_bit_data_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\hotspot_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\inner_distance_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\insanity_layer.cu" />
@@ -435,6 +438,9 @@
     <CudaCompile Include="..\..\src\caffe\layers\triplet_loss_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\truncation_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\util\nms.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\src\caffe\proto\caffe.proto" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(SolutionDir)\CommonSettings.targets" />

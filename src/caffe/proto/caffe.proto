@@ -1416,6 +1416,9 @@ message V1LayerParameter {
     ROIPOOLING = 46;
     BATCH_NORM = 47;
     ELTWISE_AFFINE = 48;
+	// LDP: add a new data layer here, use the same param as HDF5_Data
+	// However, the data is stored as char and treated as 1-bit
+    HDF5_BIT_DATA = 109;		
   }
   optional LayerType type = 5;
   repeated BlobProto blobs = 6;
