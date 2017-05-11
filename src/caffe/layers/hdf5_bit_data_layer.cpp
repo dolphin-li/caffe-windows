@@ -142,7 +142,6 @@ namespace caffe {
 	template <typename Dtype>
 	void HDF5BitDataLayer<Dtype>::LoadHDF5FileData(const char* filename) 
 	{
-		LOG(INFO) << "###############0: " << filename;
 		DLOG(INFO) << "Loading HDF5 file: " << filename;
 		hid_t file_id = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 		if (file_id < 0)
