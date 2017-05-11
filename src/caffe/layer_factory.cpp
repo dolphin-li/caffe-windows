@@ -103,37 +103,42 @@ REGISTER_LAYER_CREATOR(BN, GetBNLayer);
 // Get pooling layer according to engine.
 template <typename Dtype>
 shared_ptr<Layer<Dtype> > GetPoolingLayer(const LayerParameter& param) {
-  PoolingParameter_Engine engine = param.pooling_param().engine();
-  if (engine == PoolingParameter_Engine_DEFAULT) {
-    engine = PoolingParameter_Engine_CAFFE;
+	PoolingParameter_Engine engine = param.pooling_param().engine();
+	if (engine == PoolingParameter_Engine_DEFAULT) {
+		engine = PoolingParameter_Engine_CAFFE;
 #ifdef USE_CUDNN
-    engine = PoolingParameter_Engine_CUDNN;
+		engine = PoolingParameter_Engine_CUDNN;
 #endif
-  }
-  if (engine == PoolingParameter_Engine_CAFFE) {
-    return shared_ptr<Layer<Dtype> >(new PoolingLayer<Dtype>(param));
+	}
+	if (engine == PoolingParameter_Engine_CAFFE) {
+		return shared_ptr<Layer<Dtype> >(new PoolingLayer<Dtype>(param));
 #ifdef USE_CUDNN
-  } else if (engine == PoolingParameter_Engine_CUDNN) {
-    if (param.top_size() > 1) {
-      LOG(INFO) << "cuDNN does not support multiple tops. "
-                << "Using Caffe's own pooling layer.";
-      return shared_ptr<Layer<Dtype> >(new PoolingLayer<Dtype>(param));
-    }
-    // CuDNN assumes layers are not being modified in place, thus
-    // breaking our index tracking for updates in some cases in Caffe.
-    // Until there is a workaround in Caffe (index management) or
-    // cuDNN, use Caffe layer to max pooling, or don't use in place
-    // layers after max pooling layers
-    if (param.pooling_param().pool() == PoolingParameter_PoolMethod_MAX) {
-        return shared_ptr<Layer<Dtype> >(new PoolingLayer<Dtype>(param));
-    } else {
-        return shared_ptr<Layer<Dtype> >(new CuDNNPoolingLayer<Dtype>(param));
-    }
+	}
+	else if (engine == PoolingParameter_Engine_CUDNN) {
+		if (param.top_size() > 1) {
+			LOG(INFO) << "cuDNN does not support multiple tops. "
+				<< "Using Caffe's own pooling layer.";
+			return shared_ptr<Layer<Dtype> >(new PoolingLayer<Dtype>(param));
+		}
+		// CuDNN assumes layers are not being modified in place, thus
+		// breaking our index tracking for updates in some cases in Caffe.
+		// Until there is a workaround in Caffe (index management) or
+		// cuDNN, use Caffe layer to max pooling, or don't use in place
+		// layers after max pooling layers
+	   // if (param.pooling_param().pool() == PoolingParameter_PoolMethod_MAX) {
+	   //     return shared_ptr<Layer<Dtype> >(new PoolingLayer<Dtype>(param));
+	   // } else {
+		if (param.pooling_param().pool() == PoolingParameter_PoolMethod_MAX) {
+			LOG(WARNING) << "Use CuDNN for MaxPooling, make sure the layer after pooling is NOT in-place!!!!";
+		}
+		return shared_ptr<Layer<Dtype> >(new CuDNNPoolingLayer<Dtype>(param));
+		// }
 #endif
-  } else {
-    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
-    throw;  // Avoids missing return warning
-  }
+	}
+	else {
+		LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+		throw;  // Avoids missing return warning
+	}
 }
 
 REGISTER_LAYER_CREATOR(Pooling, GetPoolingLayer);

@@ -7,14 +7,15 @@ namespace caffe {
 
 template <typename Dtype>
 void CuDNNPoolingLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
-    const vector<Blob<Dtype>*>& top) {
+    const vector<Blob<Dtype>*>& top) 
+{
   PoolingLayer<Dtype>::LayerSetUp(bottom, top);
-  cudnn::createTensor4dDesc<Dtype>(&bottom_desc_);
-  cudnn::createTensor4dDesc<Dtype>(&top_desc_);
+  cudnn::createTensorNdDesc<Dtype>(&bottom_desc_);
+  cudnn::createTensorNdDesc<Dtype>(&top_desc_);
   cudnn::createPoolingDesc<Dtype>(&pooling_desc_,
       this->layer_param_.pooling_param().pool(), &mode_,
-      this->kernel_h_, this->kernel_w_, this->pad_h_, this->pad_w_,
-      this->stride_h_, this->stride_w_);
+      this->num_spatial_axes_, this->kernel_shape_.cpu_data(), 
+	  this->pad_shape_.cpu_data(), this->stride_shape_.cpu_data());
   handles_setup_ = true;
 }
 
@@ -22,10 +23,10 @@ template <typename Dtype>
 void CuDNNPoolingLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
   PoolingLayer<Dtype>::Reshape(bottom, top);
-  cudnn::setTensor4dDesc<Dtype>(&bottom_desc_, bottom[0]->num(),
-      this->channels_, this->height_, this->width_);
-  cudnn::setTensor4dDesc<Dtype>(&top_desc_, bottom[0]->num(),
-      this->channels_, this->pooled_height_, this->pooled_width_);
+  CHECK_EQ(channel_axis_, 1);
+  CHECK_EQ(top.size(), 1);	// cudnn conv layer does not support top_mask for MAX POOLING tracking
+  cudnn::setTensorNdDesc<Dtype>(&bottom_desc_, bottom[0]->num_axes(), bottom[0]->shape().data());
+  cudnn::setTensorNdDesc<Dtype>(&top_desc_, top[0]->num_axes(), top[0]->shape().data());
 }
 
 template <typename Dtype>

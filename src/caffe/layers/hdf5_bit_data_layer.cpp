@@ -98,18 +98,20 @@ namespace caffe {
 		bool is_bit_data = false;
 		hdf5_load_nd_dataset_char_as_bit_helper<float>(file_id, dataset_name_, min_dim, max_dim, blob, is_bit_data);
 
-		// if not bit data, we simply read it
-		if (!is_bit_data)
-		{
-			herr_t status = H5LTread_dataset_float(file_id, dataset_name_, blob->mutable_cpu_data());
-			CHECK_GE(status, 0) << "Failed to read float dataset " << dataset_name_;
-		}
-		// else, we treat as bit data
+		// if bit data, we convert it to value
+		if (is_bit_data)
 		{
 			std::vector<char> tmp(blob->count() / 8);
+			CHECK_EQ(blob->shape(0) % 8, 0) << "HDF5 bit data, num must be *times 8: " << dataset_name_;
 			herr_t status = H5LTread_dataset_char(file_id, dataset_name_, tmp.data());
 			CHECK_GE(status, 0) << "Failed to read bit dataset" << dataset_name_;
 			convert_bool_to_dtype(tmp.size(), tmp.data(), blob->mutable_cpu_data());
+		}
+		// else, we treat as general data
+		else
+		{
+			herr_t status = H5LTread_dataset_float(file_id, dataset_name_, blob->mutable_cpu_data());
+			CHECK_GE(status, 0) << "Failed to read float dataset " << dataset_name_;
 		}
 	}
 	template <>
@@ -120,12 +122,7 @@ namespace caffe {
 		hdf5_load_nd_dataset_char_as_bit_helper<double>(file_id, dataset_name_, min_dim, max_dim, blob, is_bit_data);
 
 		// if not bit data, we simply read it
-		if (!is_bit_data)
-		{
-			herr_t status = H5LTread_dataset_double(file_id, dataset_name_, blob->mutable_cpu_data());
-			CHECK_GE(status, 0) << "Failed to read float dataset " << dataset_name_;
-		}
-		// else, we treat as bit data
+		if (is_bit_data)
 		{
 			std::vector<char> tmp(blob->count() / 8);
 			CHECK_EQ(blob->shape(0) % 8, 0) << "HDF5 bit data, num must be *times 8: " << dataset_name_;
@@ -133,12 +130,19 @@ namespace caffe {
 			CHECK_GE(status, 0) << "Failed to read bit dataset" << dataset_name_;
 			convert_bool_to_dtype(tmp.size(), tmp.data(), blob->mutable_cpu_data());
 		}
+		// else, we treat as bit data
+		else
+		{
+			herr_t status = H5LTread_dataset_double(file_id, dataset_name_, blob->mutable_cpu_data());
+			CHECK_GE(status, 0) << "Failed to read float dataset " << dataset_name_;
+		}
 	}
 
 	// Load data and label from HDF5 filename into the class property blobs.
 	template <typename Dtype>
 	void HDF5BitDataLayer<Dtype>::LoadHDF5FileData(const char* filename) 
 	{
+		LOG(INFO) << "###############0: " << filename;
 		DLOG(INFO) << "Loading HDF5 file: " << filename;
 		hid_t file_id = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 		if (file_id < 0)
