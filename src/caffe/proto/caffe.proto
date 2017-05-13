@@ -818,6 +818,13 @@ message HDF5DataParameter {
   // but data between different files are not interleaved; all of a file's
   // data are output (in a random order) before moving onto another file.
   optional bool shuffle = 3 [default = false];
+
+  // For bit data input:
+  // bit data is in format of char, specified by the data name
+  // each bit 0 and 1 is converted to the given float value
+  optional float bit_data_0 = 4 [default = 1];
+  optional float bit_data_1 = 5 [default = -1];
+  repeated string bit_data_names = 6;
 }
 
 message HDF5OutputParameter {

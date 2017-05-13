@@ -30,9 +30,12 @@ namespace caffe {
 			: HDF5DataLayer<Dtype>(param){}
 		virtual ~HDF5BitDataLayer();
 		virtual inline const char* type() const { return "HDF5BitData"; }
-		static inline Dtype bool_to_value(bool b) { return b ? Dtype(-1) : Dtype(1); }
+		virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
 	protected:
 		virtual void LoadHDF5FileData(const char* filename);
+	protected:
+		std::set<std::string> bit_data_names_;
+		Dtype bit_data_conversion_[2];
 	};
 
 }  // namespace caffe

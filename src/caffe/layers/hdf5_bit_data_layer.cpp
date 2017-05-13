@@ -19,20 +19,21 @@ namespace caffe {
 	HDF5BitDataLayer<Dtype>::~HDF5BitDataLayer<Dtype>() { }
 
 	template <typename Dtype>
-	static void convert_bool_to_dtype(int B_cnt, const char* B, Dtype* A)
+	static void convert_bool_to_dtype(int B_cnt, const char* B, Dtype* A, const Dtype bit_value[2])
 	{
 		for (int i = 0; i < B_cnt; i++)
 		{
 			int apos = i * 8;
 			const char data = B[i];
 			for (int k = 0; k < 8; k++, apos++)
-				A[apos] = HDF5BitDataLayer<Dtype>::bool_to_value((data >> k) & 0x1);
+				A[apos] = bit_value[(data >> k) & 0x1];
 		}
 	}
 
 	template <typename Dtype>
 	void hdf5_load_nd_dataset_char_as_bit_helper(hid_t file_id, const char* dataset_name_,
-		int min_dim, int max_dim, Blob<Dtype>* blob, bool& is_bit_data)
+		int min_dim, int max_dim, Blob<Dtype>* blob, 
+		const std::set<std::string>& bit_names, bool& is_bit_data)
 	{
 		// Verify that the dataset exists.
 		CHECK(H5LTfind_dataset(file_id, dataset_name_)) << "Failed to find HDF5 dataset " << dataset_name_;
@@ -82,7 +83,9 @@ namespace caffe {
 		vector<int> blob_dims(dims.size());
 		for (int i = 0; i < dims.size(); ++i)
 			blob_dims[i] = dims[i];
-		is_bit_data = (class_ == H5T_INTEGER && class_bytes_ == 1);
+		is_bit_data = (bit_names.find(dataset_name_) != bit_names.end());
+		if (is_bit_data && !(class_ == H5T_INTEGER && class_bytes_ == 1))
+			LOG(FATAL) << "BitData only supported int8, given: " << dataset_name_ << "[bytes=" << class_bytes_ << "]";
 		if (is_bit_data)
 			blob_dims[0] *= 8;
 		blob->Reshape(blob_dims);
@@ -90,14 +93,16 @@ namespace caffe {
 
 	template <typename Dtype>
 	void hdf5_load_nd_dataset_char_as_bit(hid_t file_id, const char* dataset_name_,
-		int min_dim, int max_dim, Blob<Dtype>* blob);
+		int min_dim, int max_dim, Blob<Dtype>* blob,
+		const std::set<std::string>& bit_names, const Dtype bit_value[2]);
 	template <>
 	void hdf5_load_nd_dataset_char_as_bit(hid_t file_id, const char* dataset_name_,
-		int min_dim, int max_dim, Blob<float>* blob)
+		int min_dim, int max_dim, Blob<float>* blob,
+		const std::set<std::string>& bit_names, const float bit_value[2])
 	{
 		bool is_bit_data = false;
-		hdf5_load_nd_dataset_char_as_bit_helper<float>(file_id, dataset_name_, min_dim, max_dim, blob, is_bit_data);
-
+		hdf5_load_nd_dataset_char_as_bit_helper<float>(file_id, dataset_name_, 
+			min_dim, max_dim, blob, bit_names, is_bit_data);
 		// if bit data, we convert it to value
 		if (is_bit_data)
 		{
@@ -105,7 +110,7 @@ namespace caffe {
 			CHECK_EQ(blob->shape(0) % 8, 0) << "HDF5 bit data, num must be *times 8: " << dataset_name_;
 			herr_t status = H5LTread_dataset_char(file_id, dataset_name_, tmp.data());
 			CHECK_GE(status, 0) << "Failed to read bit dataset" << dataset_name_;
-			convert_bool_to_dtype(tmp.size(), tmp.data(), blob->mutable_cpu_data());
+			convert_bool_to_dtype(tmp.size(), tmp.data(), blob->mutable_cpu_data(), bit_value);
 		}
 		// else, we treat as general data
 		else
@@ -116,10 +121,12 @@ namespace caffe {
 	}
 	template <>
 	void hdf5_load_nd_dataset_char_as_bit(hid_t file_id, const char* dataset_name_,
-		int min_dim, int max_dim, Blob<double>* blob)
+		int min_dim, int max_dim, Blob<double>* blob, 
+		const std::set<std::string>& bit_names, const double bit_value[2])
 	{
 		bool is_bit_data = false;
-		hdf5_load_nd_dataset_char_as_bit_helper<double>(file_id, dataset_name_, min_dim, max_dim, blob, is_bit_data);
+		hdf5_load_nd_dataset_char_as_bit_helper<double>(file_id, dataset_name_,
+			min_dim, max_dim, blob, bit_names, is_bit_data);
 
 		// if not bit data, we simply read it
 		if (is_bit_data)
@@ -128,7 +135,7 @@ namespace caffe {
 			CHECK_EQ(blob->shape(0) % 8, 0) << "HDF5 bit data, num must be *times 8: " << dataset_name_;
 			herr_t status = H5LTread_dataset_char(file_id, dataset_name_, tmp.data());
 			CHECK_GE(status, 0) << "Failed to read bit dataset" << dataset_name_;
-			convert_bool_to_dtype(tmp.size(), tmp.data(), blob->mutable_cpu_data());
+			convert_bool_to_dtype(tmp.size(), tmp.data(), blob->mutable_cpu_data(), bit_value);
 		}
 		// else, we treat as bit data
 		else
@@ -158,7 +165,8 @@ namespace caffe {
 			hdf_blobs_[i_top] = shared_ptr<Blob<Dtype> >(new Blob<Dtype>());
 			// Allow reshape here, as we are loading data not params
 			hdf5_load_nd_dataset_char_as_bit(file_id, this->layer_param_.top(i_top).c_str(),
-				MIN_DATA_DIM, MAX_DATA_DIM, hdf_blobs_[i_top].get());
+				MIN_DATA_DIM, MAX_DATA_DIM, hdf_blobs_[i_top].get(),
+				bit_data_names_, bit_data_conversion_);
 		} // end for i_top
 
 		herr_t status = H5Fclose(file_id);
@@ -182,6 +190,79 @@ namespace caffe {
 		}
 		else
 			DLOG(INFO) << "Successfully loaded " << hdf_blobs_[0]->shape(0) << " rows";
+	}
+
+	template <typename Dtype>
+	void HDF5BitDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top) 
+	{
+		// Refuse transformation parameters since HDF5 is totally generic.
+		CHECK(!this->layer_param_.has_transform_param()) <<
+			this->type() << " does not transform data.";
+		// Read the source to parse the filenames.
+		const string& source = this->layer_param_.hdf5_data_param().source();
+		LOG(INFO) << "Loading list of HDF5 filenames from: " << source;
+		hdf_filenames_.clear();
+		std::ifstream source_file(source.c_str());
+		if (source_file.is_open()) {
+			std::string line;
+			while (source_file >> line) {
+				hdf_filenames_.push_back(line);
+			}
+		}
+		else {
+			LOG(FATAL) << "Failed to open source file: " << source;
+		}
+		source_file.close();
+		num_files_ = hdf_filenames_.size();
+		current_file_ = 0;
+		LOG(INFO) << "Number of HDF5 files: " << num_files_;
+		CHECK_GE(num_files_, 1) << "Must have at least 1 HDF5 filename listed in "
+			<< source;
+
+		file_permutation_.clear();
+		file_permutation_.resize(num_files_);
+		// Default to identity permutation.
+		for (int i = 0; i < num_files_; i++) {
+			file_permutation_[i] = i;
+		}
+
+		// Shuffle if needed.
+		if (this->layer_param_.hdf5_data_param().shuffle()) {
+			std::random_shuffle(file_permutation_.begin(), file_permutation_.end());
+		}
+
+		// load bit data related
+		bit_data_conversion_[0] = this->layer_param_.hdf5_data_param().bit_data_0();
+		bit_data_conversion_[1] = this->layer_param_.hdf5_data_param().bit_data_1();
+		LOG(INFO) << "HDF5BitData convertion: 0->" << bit_data_conversion_[0] << ", 1->"
+			<< bit_data_conversion_[1];
+
+		std::string logInfo = "HDF5BitData names: ";
+		bit_data_names_.clear();
+		for (int i = 0; i < this->layer_param_.hdf5_data_param().bit_data_names_size(); i++)
+		{
+			bit_data_names_.insert(this->layer_param_.hdf5_data_param().bit_data_names(i));
+			logInfo += ", " + this->layer_param_.hdf5_data_param().bit_data_names(i);
+		}
+		LOG(INFO) << logInfo;
+
+		// Load the first HDF5 file and initialize the line counter.
+		LoadHDF5FileData(hdf_filenames_[file_permutation_[current_file_]].c_str());
+		current_row_ = 0;
+
+		// Reshape blobs.
+		const int batch_size = this->layer_param_.hdf5_data_param().batch_size();
+		const int top_size = this->layer_param_.top_size();
+		vector<int> top_shape;
+		for (int i = 0; i < top_size; ++i) {
+			top_shape.resize(hdf_blobs_[i]->num_axes());
+			top_shape[0] = batch_size;
+			for (int j = 1; j < top_shape.size(); ++j) {
+				top_shape[j] = hdf_blobs_[i]->shape(j);
+			}
+			top[i]->Reshape(top_shape);
+		}
 	}
 
 	INSTANTIATE_CLASS(HDF5BitDataLayer);
