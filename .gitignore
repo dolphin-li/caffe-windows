@@ -1,5 +1,8 @@
 ## General
 
+*.obj
+*.log
+
 # Compiled Object files
 *.slo
 *.lo
