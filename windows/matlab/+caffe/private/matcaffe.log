@@ -1,6 +1,7 @@
-﻿C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.CppBuild.targets(1189,5): warning MSB8012: TargetPath(D:\caffe-windows-github\windows\..\Build\x64\Release\caffe_.mexw64) does not match the Linker's OutputFile property value (D:\caffe-windows-github\matlab\+caffe\private\caffe_.mexw64). This may cause your project to build incorrectly. To correct this, please make sure that $(OutDir), $(TargetName) and $(TargetExt) property values match the value specified in %(Link.OutputFile).
-     Creating library D:\caffe-windows-github\windows\\..\matlab\+caffe\private\caffe_.lib and object D:\caffe-windows-github\windows\\..\matlab\+caffe\private\caffe_.exp
+﻿  caffe_.cpp
+C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.CppBuild.targets(1189,5): warning MSB8012: TargetPath(E:\caffe_dp\windows\..\Build\x64\Release\caffe_.mexw64) does not match the Linker's OutputFile property value (E:\caffe_dp\matlab\+caffe\private\caffe_.mexw64). This may cause your project to build incorrectly. To correct this, please make sure that $(OutDir), $(TargetName) and $(TargetExt) property values match the value specified in %(Link.OutputFile).
+     Creating library E:\caffe_dp\windows\\..\matlab\+caffe\private\caffe_.lib and object E:\caffe_dp\windows\\..\matlab\+caffe\private\caffe_.exp
   Generating code
   Finished generating code
-  matcaffe.vcxproj -> D:\caffe-windows-github\windows\..\Build\x64\Release\caffe_.mexw64
-  matcaffe.vcxproj -> D:\caffe-windows-github\windows\\..\matlab\+caffe\private\caffe_.pdb (Full PDB)
+  matcaffe.vcxproj -> E:\caffe_dp\windows\..\Build\x64\Release\caffe_.mexw64
+  matcaffe.vcxproj -> E:\caffe_dp\windows\\..\matlab\+caffe\private\caffe_.pdb (Full PDB)
