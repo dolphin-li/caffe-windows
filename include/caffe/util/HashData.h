@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "caffe/blob.hpp"
+#include "MyMacro.h"
 //used to pack xyz position 
 typedef struct tag_PACKED_POSITION
 {
@@ -41,8 +42,20 @@ inline void xyz_from_pack(const PACKED_POSITION &packed_val, int &x, int &y, int
 	z = (packed_z & 0xFFFF0000) >> 16;
 }
 
-typedef struct tag_HashData
+class HashData
 {
+public:
+	HashData()
+	{
+		m_hash_data = NULL;
+		m_position_tag = NULL;
+		m_offset_data = NULL;
+		m_mBar = 0;
+		m_rBar = 0;
+		m_defNum = 0;
+		m_channels = 0;
+	}
+public:
 	float *m_hash_data;
 	PACKED_POSITION *m_position_tag;
 	unsigned char *m_offset_data;
@@ -50,21 +63,29 @@ typedef struct tag_HashData
 	int m_rBar;
 	int m_defNum;
 	int m_channels;
-}HashData;
+};
 
-typedef struct tag_BatchHashData
+class BatchHashData
 {
+public:
+	BatchHashData()
+	{
+		m_hash_data = NULL;
+		m_position_tag = NULL;
+		m_offset_data = NULL;
+		m_channels = 0;
+	}
+public:
 	float *m_hash_data;		//hash data; in batch mode, it is Packed as (M1, M2, ..., Mn)
 	PACKED_POSITION *m_position_tag;	//position tag; in batch mode, it is packed as (M1, M2, ..., Mn)
 	unsigned char *m_offset_data;	//offset table; in batch mode, it is Packed as (R1, R2, ..., Rn)
-
 
 	//unsigned char *m_hash_table_p;	//position hash table; in batch mode, it is packed as (P1,P2,...,Pn)
 	std::vector<int> m_mBars;			//different m for each hash (m*m*m to store each hash data)
 	std::vector<int> m_rBars;			//different r for each hash (r*r*r to store offset data)
 	std::vector<int> m_defNums;			//defined voxel num in each hash
 	int m_channels;
-}BatchHashData;
+};
 
 //int getDefinedVoxelNum(const float *hash_data, int m_bar, int channels);
 int getDefinedVoxelNum(const PACKED_POSITION *pos_tags, int m);
@@ -85,11 +106,15 @@ inline bool ishashVoxelDefined(const PACKED_POSITION *pos_tag_ptr)
 {
 	int x, y, z;
 	xyz_from_pack(*pos_tag_ptr, x, y, z);
-	return !(x<0 || y<0 || z<0);
+	return !(x== INVALID_POSTAG || y== INVALID_POSTAG || z== INVALID_POSTAG);
 }
 
 bool loadHash(HashData &hash_data, const char *filename);
 bool loadHash(HashData &hash_data, FILE *fp);
+bool saveHash(const HashData &hash_data, const char *filename);
+bool saveHash(const HashData &hash_data, FILE *fp);
+bool saveHashStruct(const HashData &hash_data, const char *filename);
+bool saveHashStruct(const HashData &hash_data, FILE *fp);
 bool loadBatchHashData(BatchHashData &batch_data, const char *filelist);
 
 bool loadHashes(std::vector<HashData> &hashes, const char *filename);
@@ -130,5 +155,50 @@ _inline void Hash(int nx, int ny, int nz, int& mx, int& my, int& mz,
 }
 
 void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashData &batch_hash);
+
+
+/************************************************************************************************/
+/*******************************For hierachy hashes**********************************/
+/*****************************Different layers will have different hash structures********************/
+/*****************************Different layers may share the same hash structures**************/
+
+//hash struct info, may be shared by different layers
+class CHashStructInfo	
+{
+public:
+	CHashStructInfo();
+	~CHashStructInfo();
+	void destroy();
+	int load(FILE *fp);
+	int save(FILE *fp) const;
+public:
+	PACKED_POSITION *m_position_tag;
+	unsigned char *m_offset_data;
+	int m_mBar;
+	int m_rBar;
+	int m_defNum;
+};
+
+
+class CHierarchyHash
+{
+public:
+	CHierarchyHash();
+	~CHierarchyHash();
+	void destroy();
+	void destroyStructs();
+	void initStructs(int n);
+	int load(FILE *fp);
+	int save(FILE *fp) const;
+public:
+	float *m_hash_data;		//bottom hash data
+	int m_channels;			//bottom hash channels
+	std::vector<CHashStructInfo*> m_vpStructs;
+};
+
+
+int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, const char *filename);
+
+int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix);
 
 #endif

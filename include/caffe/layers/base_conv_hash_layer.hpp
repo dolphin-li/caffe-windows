@@ -25,7 +25,7 @@ class BaseConvHashLayer : public Layer<Dtype> {
 
   virtual inline int MinBottomBlobs() const { return 1; }
   virtual inline int MinTopBlobs() const { return 1; }
-  virtual inline bool EqualNumBottomTopBlobs() const { return true; }
+  virtual inline bool EqualNumBottomTopBlobs() const { return false; }
 
  protected:
   // Helper functions that abstract away the column buffer and gemm arguments.
@@ -89,7 +89,9 @@ class BaseConvHashLayer : public Layer<Dtype> {
   Blob<Dtype> col_buffer_;
   Blob<Dtype> out_col_buffer_;
   Blob<Dtype> bias_multiplier_;
-	
+
+public://for debug
+	int writeDenseKernel_2_HF5(const char *filename);
 };
 
 

@@ -12,6 +12,19 @@ namespace caffe {
 template <typename Dtype>
 void BaseConvHashLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
+
+	//CHECK size
+	if (bottom.size()!=1+HASH_STRUCTURE_SIZE)
+	{
+		printf("Fatal error: bottom size should be %d\n",1+HASH_STRUCTURE_SIZE);
+		exit(0);
+	}
+	if (top.size()!=1)
+	{
+		printf("Fatal error: top size should be 1\n");
+		exit(0);
+	}
+
   // Configure the kernel size, padding, stride, and inputs.
   const ConvHashParameter &conv_param = this->layer_param_.conv_hash_param();
   
@@ -184,11 +197,6 @@ void BaseConvHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) 
 {  
   // Shape the tops from the bottom hash structure info: offset, pos_tag, m_bar...
-  if (bottom.size()!=top.size())
-  {
-	  printf("Fatal error: top size %zd should be equal to bottom size %zd\n",top.size(),bottom.size());
-	  exit(0);
-  }
   if (!bottom[M_BAR_BLOB]->num_axes())
   {
 	  printf("*************Data not transferred. cannot reshape topHashData!\n**********");
@@ -322,6 +330,10 @@ void BaseConvHashLayer<Dtype>::forward_cpu_gemm(const float *bottom_hash, const 
 	ofs.close();
 #endif
 
+#if 1//for debug
+	writeDenseKernel_2_HF5("kernerl.hf5");
+#endif
+
 	//convert out col buf to top
 	//conv_col2hash_cpu(bottom_hash, top_hash, m_bar, bottom_channels, top_channels, defined_voxel_num, out_col_buffer_.mutable_cpu_data());
 }
@@ -452,6 +464,19 @@ void BaseConvHashLayer<Dtype>::backward_gpu_bias(Dtype* bias,
   //caffe_gpu_gemv<Dtype>(CblasNoTrans, num_output_, out_spatial_dim_, 1.,
   //    input, bias_multiplier_.gpu_data(), 1., bias);
 }
+
+template <typename Dtype>
+int BaseConvHashLayer<Dtype>::writeDenseKernel_2_HF5(const char *filename) 
+{
+	if (blobs_.size()<1)
+	{
+		return 0;
+	}
+	writeDense_2_HF5((const float*)blobs_[0]->cpu_data(), 
+		blobs_[0]->shape(0), kernel_shape_.cpu_data()[0], blobs_[0]->shape(1), filename);
+	return 1;
+}
+
 
 #endif  // !CPU_ONLY
 

@@ -21,7 +21,7 @@ template <typename Dtype>
 class HashDataLayer : public Layer<Dtype> {
  public:
   explicit HashDataLayer(const LayerParameter& param)
-      : Layer<Dtype>(param), offset_() {}
+	  : Layer<Dtype>(param), offset_() { channels_ = 0; }
   virtual ~HashDataLayer();
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
@@ -36,8 +36,13 @@ class HashDataLayer : public Layer<Dtype> {
   virtual inline int MinTopBlobs() const { return 1; }
 protected:	//for hash data
 	//transfer a batch hases to blobs
-	void hashes_2_blobs(const std::vector<HashData> &hases, const std::vector<unsigned int> &batch_perm,
-		const std::vector<Blob<Dtype>*>& top);
+	//void hashes_2_blobs(const std::vector<HashData> &hases, const std::vector<unsigned int> &batch_perm,
+	//	const std::vector<Blob<Dtype>*>& top);
+	void HierHashes_2_blobs(const std::vector<CHierarchyHash *> &vpHierHashes, const std::vector<unsigned int> &batch_perm,
+			const std::vector<Blob<Dtype>*>& top);
+public:
+	//for debug
+	void save_blobs_to_hashFiles(const std::vector<Blob<Dtype>*>& top, const char *main_body);
  protected:
   void Next();
   bool Skip();
@@ -59,13 +64,19 @@ protected:
   unsigned int num_files_;
   unsigned int current_file_;
   unsigned int current_row_;
-  std::vector<shared_ptr<Blob<Dtype> > > label_blobs_;
+  Blob<Dtype>  label_blob_;
   std::vector<unsigned int> data_permutation_;
   std::vector<unsigned int> file_permutation_;
   uint64_t offset_;
 
+  //record the input channels 
+  unsigned int channels_;
   //hash
-  std::vector<HashData> m_hashes;
+public:
+	void destroyHierHashes();
+	int loadHierHashes(FILE *fp);
+  //std::vector<HashData> m_hashes;
+  std::vector<CHierarchyHash *> m_vpHierHashes;
   std::vector<unsigned int> m_batch_perm;	//batch permutation
 };
 

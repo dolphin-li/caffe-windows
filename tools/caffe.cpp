@@ -15,7 +15,11 @@ namespace bp = boost::python;
 #include "caffe/caffe.hpp"
 #include "caffe/util/gpu_memory.hpp"
 #include "caffe/util/signal_handler.h"
-
+//******added by tianjia
+#include <windows.h>
+#include "caffe/util/MyMacro.h"
+#include "caffe/layers/conv_hash_layer.hpp"
+//**************************//
 using caffe::Blob;
 using caffe::Caffe;
 using caffe::Net;
@@ -437,7 +441,134 @@ int time() {
 }
 RegisterBrewFunction(time);
 
+/**************************For testing hash**************************/
+void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
+{
+	std::vector<Blob<float> *> bottom; //no use
+	const int struct_num = 3;
+	int top_blob_num = 1 + HASH_STRUCTURE_SIZE * struct_num + 1;
+	top.resize(top_blob_num);
+	for (int i = 0; i < top_blob_num; i++)
+	{
+		top[i] = new Blob<float>();
+	}
+
+	caffe::HashDataParameter *hash_data_param = new caffe::HashDataParameter;
+	const int batch_size = 10;
+	hash_data_param->set_source("HashLayerList.txt");
+	hash_data_param->set_batch_size(batch_size);
+	hash_data_param->set_shuffle(true);
+
+	caffe::LayerParameter hash_layer_param;
+	hash_layer_param.set_type("HashData");
+	hash_layer_param.set_allocated_hash_data_param(hash_data_param);
+
+	shared_ptr<Layer<float> > hash_data_layer =
+		caffe::LayerRegistry<float>::CreateLayer(hash_layer_param);
+
+	//setup 
+	hash_data_layer->SetUp(bottom, top);
+	//forward
+	hash_data_layer->Forward(bottom, top);
+}
+
+void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
+	int num_output, int input_channels, int kernel_size, int dense_res)
+{
+	const int top_blob_num = 1;
+	top.resize(top_blob_num);	//only data updated, structure will share the same
+	for (int i = 0; i < top_blob_num; i++)
+	{
+		top[i] = new Blob<float>();
+	}
+
+	caffe::ConvHashParameter *conv_hash_param = new caffe::ConvHashParameter;
+	conv_hash_param->set_num_output(num_output);
+	conv_hash_param->set_input_channels(input_channels);
+	conv_hash_param->set_bias_term(true);
+	for (int c =0;c<input_channels;c++)
+	{
+		conv_hash_param->add_kernel_size(kernel_size);
+	}
+
+	caffe::FillerParameter *w_filler = new caffe::FillerParameter;
+	w_filler->set_type("gaussian");
+	conv_hash_param->set_allocated_weight_filler(w_filler);
+	caffe::FillerParameter *b_filler = new caffe::FillerParameter;
+	b_filler->set_type("gaussian");
+	conv_hash_param->set_allocated_bias_filler(b_filler);
+	conv_hash_param->set_dense_res(dense_res);
+	
+
+	caffe::LayerParameter conv_hash_layer_param;
+	conv_hash_layer_param.set_type("ConvHash");
+	conv_hash_layer_param.set_allocated_conv_hash_param(conv_hash_param);
+
+	shared_ptr<Layer<float> > hash_conv_layer(new caffe::ConvHashLayer<float>(conv_hash_layer_param));
+	//setup 
+	hash_conv_layer->SetUp(bottom, top);
+	//forward
+	hash_conv_layer->Forward(bottom, top);
+
+	//save dense to HDF5 for evaluation
+	BatchHashData bottom_batch;
+	blobs_2_batchHash(bottom, bottom_batch);
+	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "bottom");
+	std::vector<Blob<float> *> structed_top(1 + HASH_STRUCTURE_SIZE);
+	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB];
+	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB];
+	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB];
+	structed_top[R_BAR_BLOB] = bottom[R_BAR_BLOB];
+	structed_top[DEFNUM_BLOB] = bottom[DEFNUM_BLOB];
+	BatchHashData top_batch;
+	blobs_2_batchHash(structed_top, top_batch);
+	writeBatchHash_2_denseFiles(top_batch, dense_res, "top");
+}
+
+void test_hash()
+{
+	printf("Testing hash data layer...\n");
+	const char *root_dir = "D:\\Projects\\TestHCNN\\testData";
+	SetCurrentDirectoryA(root_dir);
+	
+	char Buffer[128];
+	DWORD dwRet;
+	dwRet = GetCurrentDirectoryA(128, Buffer);
+	printf("Cur dir %s\n",Buffer);
+
+
+	/******************Data layer**************************/
+	std::vector<Blob<float> *> data_top;
+	test_hash_data_layer_forward(data_top);
+
+	/*****************Conv layer***************************/
+	const int num_output = 10;
+	const int input_channels = 3;
+	const int kernel_size = 3;
+	const int dense_res = 64;
+	std::vector<Blob<float> *> conv_top;
+	std::vector<Blob<float>*> conv_bottom(1 + HASH_STRUCTURE_SIZE);
+	conv_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
+	conv_bottom[OFFSET_BLOB] = data_top[OFFSET_BLOB];
+	conv_bottom[POSTAG_BLOB] = data_top[POSTAG_BLOB];
+	conv_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
+	conv_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
+	conv_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
+
+	test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, input_channels, kernel_size, dense_res);
+	
+	//do not handle memory, just for testing...
+	printf("\n");
+}
+
+
 int main(int argc, char** argv) {
+	/*************For test*****************/
+	test_hash();
+	return 0;
+	/**************************************/
+
   // Print output to stderr (while still logging).
   FLAGS_alsologtostderr = 1;
   // Set version

@@ -4,12 +4,10 @@
 #include <sstream>
 #include <cstdio>
 #include "caffe/util/MyMacro.h"
+#include "caffe/util/hdf5.hpp"
 
-#include "hdf5.h"
-#include "hdf5_hl.h"
-
-#pragma comment(lib, "hdf5_hl.lib")
-#pragma comment(lib, "hdf5.lib")
+//#pragma comment(lib, "hdf5_hl.lib")
+//#pragma comment(lib, "hdf5.lib")
 
 //NOTE: the data is organized as channel * depth * height * weight
 //int getDefinedVoxelNum(const float *hash_data, int m_bar, int channels)
@@ -99,6 +97,63 @@ bool loadHash(HashData &one_hash, const char *filename)
 	return flag;
 }
 
+bool saveHash(const HashData &one_hash, const char *filename)
+{
+	FILE *fp = fopen(filename, "wb");
+	if (!fp)
+	{
+		printf("Error: failed to save PSH to %s\n", filename);
+		return false;
+	}
+	bool flag = saveHash(one_hash, fp);
+	fclose(fp);
+	return flag;
+}
+
+bool saveHash(const HashData &one_hash, FILE *fp)
+{
+	fwrite(&one_hash.m_channels, sizeof(int), 1, fp);	//channels
+	fwrite(&one_hash.m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
+	fwrite(&one_hash.m_rBar, sizeof(int), 1, fp);	//r, for offset table
+
+											//hash data
+	const int m = one_hash.m_mBar*one_hash.m_mBar*one_hash.m_mBar;
+	fwrite(one_hash.m_hash_data, sizeof(float), m*one_hash.m_channels, fp);
+	//offset data
+	const int r = one_hash.m_rBar * one_hash.m_rBar * one_hash.m_rBar;
+	fwrite(one_hash.m_offset_data, sizeof(unsigned char), r * 3, fp);
+	//position tag
+	fwrite(one_hash.m_position_tag, sizeof(PACKED_POSITION), m, fp);
+	return true;
+}
+
+bool saveHashStruct(const HashData &one_hash, const char *filename)
+{
+	FILE *fp = fopen(filename, "wb");
+	if (!fp)
+	{
+		printf("Error: failed to save PSH to %s\n", filename);
+		return false;
+	}
+	bool flag = saveHashStruct(one_hash, fp);
+	fclose(fp);
+	return flag;
+}
+
+bool saveHashStruct(const HashData &one_hash, FILE *fp)
+{
+	fwrite(&one_hash.m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
+	fwrite(&one_hash.m_rBar, sizeof(int), 1, fp);	//r, for offset table
+
+													//hash data
+	//offset data
+	const int r = one_hash.m_rBar * one_hash.m_rBar * one_hash.m_rBar;
+	fwrite(one_hash.m_offset_data, sizeof(unsigned char), r * 3, fp);
+	//position tag
+	const int m = one_hash.m_mBar * one_hash.m_mBar * one_hash.m_mBar;
+	fwrite(one_hash.m_position_tag, sizeof(PACKED_POSITION), m, fp);
+	return true;
+}
 
 bool loadBatchHashData(BatchHashData &batch_data, const char *filelist)
 {
@@ -382,7 +437,258 @@ void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashD
 		batch_hash.m_rBars[i] = (int)blobs[R_BAR_BLOB]->mutable_cpu_data()[i];
 		batch_hash.m_defNums[i] = (int)blobs[DEFNUM_BLOB]->mutable_cpu_data()[i];
 	}
+}
+
+/*********************************************************************************************/
+/**********************************Hierarchy hashes*******************************************/
+CHashStructInfo::CHashStructInfo()
+{
+	m_position_tag = NULL;
+	m_offset_data = NULL;
+	m_mBar = 0;
+	m_rBar = 0;
+	m_defNum = 0;
+}
+
+CHashStructInfo::~CHashStructInfo()
+{
+	destroy();
+}
+
+void CHashStructInfo::destroy()
+{
+	SAFE_VDELETE(m_position_tag);	
+	SAFE_VDELETE(m_offset_data);
+	m_mBar = 0;
+	m_rBar = 0;
+	m_defNum = 0;
+}
+
+int CHashStructInfo::save(FILE *fp) const
+{
+	fwrite(&m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
+	fwrite(&m_rBar, sizeof(int), 1, fp);	//r, for offset table
+
+	const int m = m_mBar*m_mBar*m_mBar;
+	const int r = m_rBar * m_rBar * m_rBar;
+
+	if (r <= 0 || m <= 0)
+	{
+		printf("Error: failed to save hash struct info! invalid r_bar m_bar!\n");
+		return 0;
+	}
+
 	
-	
-	int m_channels;
+	fwrite(m_offset_data, sizeof(unsigned char), r * 3, fp);
+	fwrite(m_position_tag, sizeof(PACKED_POSITION), m, fp);
+
+	return 1;
+}
+
+int CHashStructInfo::load(FILE *fp)
+{
+	const int ori_mBar = m_mBar;
+	const int ori_rBar = m_rBar;
+	const int ori_m = ori_mBar * ori_mBar * ori_mBar;
+	const int ori_r = ori_rBar * ori_rBar * ori_rBar;
+
+	fread(&m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
+	fread(&m_rBar, sizeof(int), 1, fp);	//r, for offset table
+
+	const int m = m_mBar*m_mBar*m_mBar;
+	const int r = m_rBar * m_rBar * m_rBar;
+
+	if (r<=0 || m<=0)
+	{
+		printf("Error: failed to load hash struct info! invalid r_bar m_bar!\n");
+		return 0;
+	}
+
+	if (r > ori_r)
+	{
+		SAFE_VDELETE(m_offset_data);
+		m_offset_data = new unsigned char[r * 3];
+	}
+	fread(m_offset_data, sizeof(unsigned char), r * 3, fp);
+	//position hash
+	if (m > ori_m)
+	{
+		SAFE_VDELETE(m_position_tag);
+		m_position_tag = new PACKED_POSITION[m];
+	}
+	fread(m_position_tag, sizeof(PACKED_POSITION), m, fp);
+
+	//calc defined num
+	m_defNum = getDefinedVoxelNum(m_position_tag, m);
+
+	return 1;
+}
+
+///////////////////////////////////////////////////////////////////
+CHierarchyHash::CHierarchyHash()
+{
+	m_hash_data = NULL;
+	m_channels = 0;
+}
+
+CHierarchyHash::~CHierarchyHash()
+{
+	destroy();
+}
+
+void CHierarchyHash::destroy()
+{
+	SAFE_VDELETE(m_hash_data);		//bottom hash data
+	m_channels = 0;
+	destroyStructs();
+}
+
+void CHierarchyHash::destroyStructs()
+{
+	for (int i = 0; i < (int)m_vpStructs.size(); i++)
+	{
+		delete m_vpStructs[i];
+	}
+	m_vpStructs.resize(0);
+}
+
+void CHierarchyHash::initStructs(int n)
+{
+	destroyStructs();
+	m_vpStructs.resize(n);
+	for (int i = 0; i < n; i++)
+	{
+		m_vpStructs[i] = new CHashStructInfo();
+	}
+}
+
+int CHierarchyHash::load(FILE *fp)
+{
+	const int ori_channels = m_channels;
+	int ori_mBar = 0;
+	if (m_vpStructs.size())
+	{
+		ori_mBar = m_vpStructs[0]->m_mBar;
+	}
+	const int ori_m = ori_mBar * ori_mBar * ori_mBar;
+
+	//first load hash structures
+	int structure_num;
+	fread(&structure_num,sizeof(int),1,fp);
+
+	if (structure_num<1)
+	{
+		printf("Fatal error when CHierarchyHash::load; no structure info!\n");
+		exit(0);
+	}
+
+	if (m_vpStructs.size() && m_vpStructs.size()!=structure_num)
+	{
+		printf("FATAL error: structure number changed!! UNEXPECTED!!!\n");
+		exit(0);
+	}
+
+	if (!m_vpStructs.size())
+	{
+		initStructs(structure_num);
+	}
+	for (int i=0;i<structure_num;i++)
+	{
+		m_vpStructs[i]->load(fp);
+	}
+
+	//read bottom hash data
+	fread(&m_channels, sizeof(int), 1, fp);
+
+	const int new_mBar = m_vpStructs[0]->m_mBar;
+	const int new_m = new_mBar * new_mBar * new_mBar;
+	if (new_m * m_channels > ori_m * ori_channels)	//need larger memory
+	{
+		SAFE_VDELETE(m_hash_data);
+		m_hash_data = new float[new_m*m_channels];
+	}
+	fread(m_hash_data, sizeof(float), new_m*m_channels, fp);
+
+	return 1;
+}
+
+int CHierarchyHash::save(FILE *fp) const 
+{
+	int structure_num = (int)m_vpStructs.size();
+	fwrite(&structure_num, sizeof(int), 1, fp);
+
+	if (structure_num < 1)
+	{
+		printf("Fatal error when CHierarchyHash::save; no structure info!\n");
+		exit(0);
+	}
+
+	for (int i = 0; i < structure_num; i++)
+	{
+		m_vpStructs[i]->save(fp);
+	}
+
+	//write bottom hash data
+	fwrite(&m_channels, sizeof(int), 1, fp);
+
+	const int mBar = m_vpStructs[0]->m_mBar;
+	const int m = mBar * mBar * mBar;
+	fwrite(m_hash_data, sizeof(float), m*m_channels, fp);
+
+	return 1;
+}
+
+
+/*****************************************************/
+
+int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, const char *filename)
+{
+	hid_t file_id = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+	if (filename < 0)
+	{
+		printf("Error: write dense 2 HF5 file %s failed!\n", filename);
+		return 0;
+	}
+
+	herr_t err = 0;
+	hsize_t dims[5] = { (hsize_t)n, (hsize_t)channels, (hsize_t)res, (hsize_t)res, (hsize_t)res };
+
+	err = H5LTmake_dataset_float(file_id, "volume", 5, dims, dense_data);
+
+	err = H5Fclose(file_id);
+
+	return 1;
+}
+
+int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix)
+{
+	float *dense_buf = new float[res * res * res * batch.m_channels];
+
+	const float *batch_hash_ptr = batch.m_hash_data;
+	const unsigned char *batch_offset_ptr = batch.m_offset_data;
+	const PACKED_POSITION *batch_posTag_ptr = batch.m_position_tag;
+	for (int i = 0; i < (int)batch.m_mBars.size(); i++)
+	{
+		int m_bar = batch.m_mBars[i];
+		int r_bar = batch.m_rBars[i];
+		int m = m_bar*m_bar*m_bar;
+		int r = r_bar*r_bar*r_bar;
+
+		const float *hash_data = batch_hash_ptr;
+		const unsigned char *offset_data = batch_offset_ptr;
+		const PACKED_POSITION *pos_tags = batch_posTag_ptr;
+		hash_2_dense(hash_data, pos_tags, offset_data, m_bar, r_bar, batch.m_channels, dense_buf, res);
+
+		char buf[128];
+		sprintf(buf, "%s_%d.hf5", prefix, i);
+
+		writeDense_2_HF5(dense_buf, 1, res, batch.m_channels, buf);
+
+
+		batch_hash_ptr += m*batch.m_channels;
+		batch_offset_ptr += r * 3;
+		batch_posTag_ptr += m;
+	}
+	delete[]dense_buf;
+	return 1;
 }
