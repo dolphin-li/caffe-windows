@@ -56,7 +56,12 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 
 	  top_batch_hash_ptr += m * num_output_;
   }
+  
 
+#if 1//for debug
+  writeDenseKernel_2_HF5("kernel.hf5");
+  writeBias_2_HF5("bias.hf5");
+#endif
 }
 
 template <typename Dtype>

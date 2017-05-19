@@ -493,9 +493,14 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 
 	caffe::FillerParameter *w_filler = new caffe::FillerParameter;
 	w_filler->set_type("gaussian");
+	w_filler->set_std(1);
+	//w_filler->set_type("constant");
+	//w_filler->set_value(1);
 	conv_hash_param->set_allocated_weight_filler(w_filler);
+
 	caffe::FillerParameter *b_filler = new caffe::FillerParameter;
 	b_filler->set_type("gaussian");
+	b_filler->set_std(1);
 	conv_hash_param->set_allocated_bias_filler(b_filler);
 	conv_hash_param->set_dense_res(dense_res);
 	
@@ -513,6 +518,7 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	//save dense to HDF5 for evaluation
 	BatchHashData bottom_batch;
 	blobs_2_batchHash(bottom, bottom_batch);
+	bottom_batch.m_channels = input_channels;
 	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "bottom");
 	std::vector<Blob<float> *> structed_top(1 + HASH_STRUCTURE_SIZE);
 	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
@@ -523,6 +529,7 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	structed_top[DEFNUM_BLOB] = bottom[DEFNUM_BLOB];
 	BatchHashData top_batch;
 	blobs_2_batchHash(structed_top, top_batch);
+	top_batch.m_channels = num_output;
 	writeBatchHash_2_denseFiles(top_batch, dense_res, "top");
 }
 
@@ -564,6 +571,7 @@ void test_hash()
 
 
 int main(int argc, char** argv) {
+	srand(time(NULL));
 	/*************For test*****************/
 	test_hash();
 	return 0;

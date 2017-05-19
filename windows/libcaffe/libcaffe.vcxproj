@@ -169,6 +169,7 @@
     <ClCompile Include="..\..\src\caffe\layers\parameter_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\permute_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\pooling_layer.cpp" />
+    <ClCompile Include="..\..\src\caffe\layers\pool_hash_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\power_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\predict_box_layer.cpp" />
     <ClCompile Include="..\..\src\caffe\layers\prelu_layer.cpp" />
@@ -299,6 +300,7 @@
     <ClInclude Include="..\..\include\caffe\layers\parameter_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\permute_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\pooling_layer.hpp" />
+    <ClInclude Include="..\..\include\caffe\layers\pool_hash_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\power_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\predict_box_layer.hpp" />
     <ClInclude Include="..\..\include\caffe\layers\prelu_layer.hpp" />

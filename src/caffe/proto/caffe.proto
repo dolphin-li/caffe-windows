@@ -445,6 +445,7 @@ message LayerParameter {
   optional InfimumLossParamter infimum_loss_param = 229;
   optional HashDataParameter hash_data_param = 933;
   optional ConvHashParameter conv_hash_param = 934;
+  optional PoolHashParameter pool_hash_param = 935;
 }
 
 // Message that stores parameters used to apply transformation
@@ -1075,6 +1076,19 @@ message PoolingParameter {
   // filters across the spatial axes (D, H, W) of the input.
   optional int32 axis = 16 [default = 1];
 }
+
+message PoolHashParameter {
+  enum PoolMethod {
+    MAX = 0;
+    AVE = 1;
+  }
+  optional PoolMethod pool = 1 [default = MAX]; // The pooling method
+  repeated uint32 pad = 4; // The padding size (equal in Y, X)
+  repeated uint32 kernel_size = 2; // The kernel size (square)
+  repeated uint32 stride = 3; // The stride (equal in Y, X)
+  optional uint32 input_channels = 20; 
+}
+
 
 message PowerParameter {
   // PowerLayer computes outputs y = (shift + scale * x) ^ power.

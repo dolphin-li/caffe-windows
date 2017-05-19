@@ -5,7 +5,7 @@
 #include "caffe/layers/base_conv_hash_layer.hpp"
 #include "caffe/util/MyMacro.h"
 
-#define DUMP_2_TXT 1
+#define DUMP_2_TXT 0
 
 namespace caffe {
 
@@ -330,10 +330,6 @@ void BaseConvHashLayer<Dtype>::forward_cpu_gemm(const float *bottom_hash, const 
 	ofs.close();
 #endif
 
-#if 1//for debug
-	writeDenseKernel_2_HF5("kernerl.hf5");
-#endif
-
 	//convert out col buf to top
 	//conv_col2hash_cpu(bottom_hash, top_hash, m_bar, bottom_channels, top_channels, defined_voxel_num, out_col_buffer_.mutable_cpu_data());
 }
@@ -474,6 +470,18 @@ int BaseConvHashLayer<Dtype>::writeDenseKernel_2_HF5(const char *filename)
 	}
 	writeDense_2_HF5((const float*)blobs_[0]->cpu_data(), 
 		blobs_[0]->shape(0), kernel_shape_.cpu_data()[0], blobs_[0]->shape(1), filename);
+	return 1;
+}
+
+template <typename Dtype>
+int BaseConvHashLayer<Dtype>::writeBias_2_HF5(const char *filename)
+{
+	if (blobs_.size() < 2)
+	{
+		return 0;
+	}
+	writeDense_2_HF5((const float*)blobs_[1]->cpu_data(),
+		1, 1, blobs_[1]->shape(0), filename);
 	return 1;
 }
 

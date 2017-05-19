@@ -16,7 +16,7 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define INVALID_POSTAG 9999
 
 //blobs to store hash
-#define HASH_STRUCTURE_SIZE 5	//offset, postag, m_bar, r_bar, def_num
+#define HASH_STRUCTURE_SIZE 7	//offset, postag, m_bar, r_bar, def_num
 //blob idx 
 #define HASH_DATA_BLOB 0
 #define OFFSET_BLOB 1
@@ -24,5 +24,6 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define M_BAR_BLOB 3
 #define R_BAR_BLOB 4
 #define DEFNUM_BLOB 5
-//#define CHANNEL_BLOB 6
+#define DENSE_RES_BLOB 6	//
+#define CHANNEL_BLOB 7
 #endif

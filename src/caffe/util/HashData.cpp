@@ -115,7 +115,7 @@ bool saveHash(const HashData &one_hash, FILE *fp)
 	fwrite(&one_hash.m_channels, sizeof(int), 1, fp);	//channels
 	fwrite(&one_hash.m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fwrite(&one_hash.m_rBar, sizeof(int), 1, fp);	//r, for offset table
-
+	fwrite(&one_hash.m_dense_res, sizeof(int), 1, fp);	//r, for offset table
 											//hash data
 	const int m = one_hash.m_mBar*one_hash.m_mBar*one_hash.m_mBar;
 	fwrite(one_hash.m_hash_data, sizeof(float), m*one_hash.m_channels, fp);
@@ -144,7 +144,8 @@ bool saveHashStruct(const HashData &one_hash, FILE *fp)
 {
 	fwrite(&one_hash.m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fwrite(&one_hash.m_rBar, sizeof(int), 1, fp);	//r, for offset table
-
+	fwrite(&one_hash.m_channels, sizeof(int), 1, fp);
+	fwrite(&one_hash.m_dense_res, sizeof(int), 1, fp);
 													//hash data
 	//offset data
 	const int r = one_hash.m_rBar * one_hash.m_rBar * one_hash.m_rBar;
@@ -448,6 +449,8 @@ CHashStructInfo::CHashStructInfo()
 	m_mBar = 0;
 	m_rBar = 0;
 	m_defNum = 0;
+	m_channels = 0;
+	m_dense_res = 0;
 }
 
 CHashStructInfo::~CHashStructInfo()
@@ -462,12 +465,16 @@ void CHashStructInfo::destroy()
 	m_mBar = 0;
 	m_rBar = 0;
 	m_defNum = 0;
+	m_dense_res = 0;
+	m_channels = 0;
 }
 
 int CHashStructInfo::save(FILE *fp) const
 {
 	fwrite(&m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fwrite(&m_rBar, sizeof(int), 1, fp);	//r, for offset table
+	fwrite(&m_channels, sizeof(int), 1, fp);
+	fwrite(&m_dense_res, sizeof(int), 1, fp);
 
 	const int m = m_mBar*m_mBar*m_mBar;
 	const int r = m_rBar * m_rBar * m_rBar;
@@ -494,6 +501,8 @@ int CHashStructInfo::load(FILE *fp)
 
 	fread(&m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fread(&m_rBar, sizeof(int), 1, fp);	//r, for offset table
+	fread(&m_channels, sizeof(int), 1, fp);
+	fread(&m_dense_res, sizeof(int), 1, fp);
 
 	const int m = m_mBar*m_mBar*m_mBar;
 	const int r = m_rBar * m_rBar * m_rBar;
@@ -528,7 +537,6 @@ int CHashStructInfo::load(FILE *fp)
 CHierarchyHash::CHierarchyHash()
 {
 	m_hash_data = NULL;
-	m_channels = 0;
 }
 
 CHierarchyHash::~CHierarchyHash()
@@ -539,7 +547,6 @@ CHierarchyHash::~CHierarchyHash()
 void CHierarchyHash::destroy()
 {
 	SAFE_VDELETE(m_hash_data);		//bottom hash data
-	m_channels = 0;
 	destroyStructs();
 }
 
@@ -564,11 +571,12 @@ void CHierarchyHash::initStructs(int n)
 
 int CHierarchyHash::load(FILE *fp)
 {
-	const int ori_channels = m_channels;
+	int ori_channels = 0;
 	int ori_mBar = 0;
 	if (m_vpStructs.size())
 	{
 		ori_mBar = m_vpStructs[0]->m_mBar;
+		ori_channels = m_vpStructs[0]->m_channels;
 	}
 	const int ori_m = ori_mBar * ori_mBar * ori_mBar;
 
@@ -598,16 +606,15 @@ int CHierarchyHash::load(FILE *fp)
 	}
 
 	//read bottom hash data
-	fread(&m_channels, sizeof(int), 1, fp);
-
 	const int new_mBar = m_vpStructs[0]->m_mBar;
+	const int new_channels = m_vpStructs[0]->m_channels;
 	const int new_m = new_mBar * new_mBar * new_mBar;
-	if (new_m * m_channels > ori_m * ori_channels)	//need larger memory
+	if (new_m * new_channels > ori_m * ori_channels)	//need larger memory
 	{
 		SAFE_VDELETE(m_hash_data);
-		m_hash_data = new float[new_m*m_channels];
+		m_hash_data = new float[new_m*new_channels];
 	}
-	fread(m_hash_data, sizeof(float), new_m*m_channels, fp);
+	fread(m_hash_data, sizeof(float), new_m*new_channels, fp);
 
 	return 1;
 }
@@ -628,12 +635,10 @@ int CHierarchyHash::save(FILE *fp) const
 		m_vpStructs[i]->save(fp);
 	}
 
-	//write bottom hash data
-	fwrite(&m_channels, sizeof(int), 1, fp);
-
 	const int mBar = m_vpStructs[0]->m_mBar;
+	const int channels = m_vpStructs[0]->m_channels;
 	const int m = mBar * mBar * mBar;
-	fwrite(m_hash_data, sizeof(float), m*m_channels, fp);
+	fwrite(m_hash_data, sizeof(float), m*channels, fp);
 
 	return 1;
 }

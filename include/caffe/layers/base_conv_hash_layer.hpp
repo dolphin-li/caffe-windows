@@ -92,6 +92,7 @@ class BaseConvHashLayer : public Layer<Dtype> {
 
 public://for debug
 	int writeDenseKernel_2_HF5(const char *filename);
+	int writeBias_2_HF5(const char *filename);
 };
 
 

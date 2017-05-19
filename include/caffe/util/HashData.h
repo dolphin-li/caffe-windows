@@ -54,6 +54,7 @@ public:
 		m_rBar = 0;
 		m_defNum = 0;
 		m_channels = 0;
+		m_dense_res = 0;
 	}
 public:
 	float *m_hash_data;
@@ -63,6 +64,7 @@ public:
 	int m_rBar;
 	int m_defNum;
 	int m_channels;
+	int m_dense_res;
 };
 
 class BatchHashData
@@ -177,6 +179,8 @@ public:
 	int m_mBar;
 	int m_rBar;
 	int m_defNum;
+	int m_dense_res;	//corresponded to the dense data resolution
+	int m_channels;
 };
 
 
@@ -192,7 +196,6 @@ public:
 	int save(FILE *fp) const;
 public:
 	float *m_hash_data;		//bottom hash data
-	int m_channels;			//bottom hash channels
 	std::vector<CHashStructInfo*> m_vpStructs;
 };
 

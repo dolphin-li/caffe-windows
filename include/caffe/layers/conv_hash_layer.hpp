@@ -64,7 +64,7 @@ class ConvHashLayer : public BaseConvHashLayer<Dtype> {
   explicit ConvHashLayer(const LayerParameter& param)
       : BaseConvHashLayer<Dtype>(param) {}
 
-  virtual inline const char* type() const { return "Convolution"; }
+  virtual inline const char* type() const { return "ConvHash"; }
 
  protected:
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
