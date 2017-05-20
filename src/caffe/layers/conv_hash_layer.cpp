@@ -22,7 +22,7 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
  
   float *top_batch_hash_ptr = (float*)top[HASH_DATA_BLOB]->mutable_cpu_data();
   int batch_num = bottom[M_BAR_BLOB]->shape(0);
-
+  const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
   for (int i = 0; i < batch_num; ++i)
   {
 	  const float* bottom_data = batch_hash_ptr;
@@ -36,7 +36,7 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	  float *out_buf = (float*)out_col_buffer_.mutable_cpu_data();
 
 	  forward_cpu_gemm(bottom_data, offset_data, pos_tags, m_bar, r_bar,
-		  channels_, num_output_, defNum, out_buf);
+		  channels_, num_output_, defNum, dense_res,out_buf);
 
 	  if (this->bias_term_) {
 		  const float* bias = (const float*)this->blobs_[1]->cpu_data();

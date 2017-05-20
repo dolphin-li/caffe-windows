@@ -675,7 +675,6 @@ message ConvolutionParameter {
 
 message ConvHashParameter {
   optional uint32 num_output = 1; // The number of outputs for the layer
-  optional uint32 input_channels = 20; // The channels of inputs for the layer. Unlike ConvLayer, the channels can be got from bottom.shape
   optional bool bias_term = 2 [default = true]; // whether to have bias terms
 
   // Pad, kernel size, and stride are all given as a single value for equal
@@ -690,8 +689,6 @@ message ConvHashParameter {
 
   optional FillerParameter weight_filler = 7; // The filler for the weight
   optional FillerParameter bias_filler = 8; // The filler for the bias
- 
-  optional int32 dense_res = 17 [default = 32];
 }
 
 message CropParameter {

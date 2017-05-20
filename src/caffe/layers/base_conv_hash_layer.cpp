@@ -105,7 +105,7 @@ void BaseConvHashLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   }
 #endif
   // Configure output channels and groups.
-  channels_ = conv_param.input_channels();
+  channels_ = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
   CHECK_GT(channels_, 0);
   num_output_ = conv_param.num_output();
   CHECK_GT(num_output_, 0);
@@ -264,13 +264,13 @@ void BaseConvHashLayer<Dtype>::reshape_colBuf(const vector<Blob<Dtype>*>& bottom
 template <typename Dtype>
 void BaseConvHashLayer<Dtype>::forward_cpu_gemm(const float *bottom_hash, const unsigned char *bottom_offset,
 	const PACKED_POSITION *bottom_posTag, int m_bar, int r_bar,
-	int bottom_channels, int top_channels, int defined_voxel_num, float *out_col_buf)
+	int bottom_channels, int top_channels, int defined_voxel_num, int dense_res, float *out_col_buf)
 {
 	const int *kernel_shape = kernel_shape_.cpu_data();
 	const ConvHashParameter &conv_param = this->layer_param_.conv_hash_param();
 	conv_hash2col_cpu(bottom_hash, bottom_offset, bottom_posTag, kernel_shape,
 		m_bar, r_bar, bottom_channels,
-		defined_voxel_num, conv_param.dense_res(), (float*)col_buffer_.mutable_cpu_data());
+		defined_voxel_num, dense_res, (float*)col_buffer_.mutable_cpu_data());
 
 #if DUMP_2_TXT	
 	int rows = bottom_channels*kernel_shape[0] * kernel_shape[1] * kernel_shape[2];

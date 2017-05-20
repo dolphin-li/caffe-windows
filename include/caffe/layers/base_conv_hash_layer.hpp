@@ -33,7 +33,7 @@ class BaseConvHashLayer : public Layer<Dtype> {
   // we just called weight_cpu_gemm with the same input.
 	 void forward_cpu_gemm(const float *bottom_hash, const unsigned char *bottom_offset,
 		 const PACKED_POSITION *bottom_posTag, int m_bar, int r_bar,
-		 int bottom_channels, int top_channels, int defined_voxel_num, float *out_col_buf);
+		 int bottom_channels, int top_channels, int defined_voxel_num, int dense_res, float *out_col_buf);
   void forward_cpu_bias(float* out_col_buf, const float* bias, int defined_voxel_num);
   void backward_cpu_gemm(const Dtype* input, const Dtype* weights,
       Dtype* output);
