@@ -28,9 +28,9 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	  const float* bottom_data = batch_hash_ptr;
 	  const unsigned char*offset_data = batch_offset_ptr;
 	  const PACKED_POSITION *pos_tags = batch_posTag_ptr;
-	  const int m_bar = bottom[M_BAR_BLOB]->cpu_data()[i];
-	  const int r_bar = bottom[R_BAR_BLOB]->cpu_data()[i];
-	  const int defNum = bottom[DEFNUM_BLOB]->cpu_data()[i];
+	  const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+	  const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+	  const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
 
 	  float *top_data = top_batch_hash_ptr;
 	  float *out_buf = (float*)out_col_buffer_.mutable_cpu_data();

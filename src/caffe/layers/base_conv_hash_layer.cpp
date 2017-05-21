@@ -14,14 +14,14 @@ void BaseConvHashLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
 
 	//CHECK size
-	if (bottom.size()!=1+HASH_STRUCTURE_SIZE)
+	if (bottom.size()!= HASH_DATA_SIZE + HASH_STRUCTURE_SIZE)
 	{
-		printf("Fatal error: bottom size should be %d\n",1+HASH_STRUCTURE_SIZE);
+		printf("Fatal error: bottom size should be %d\n", HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
 		exit(0);
 	}
-	if (top.size()!=1)
+	if (top.size()!= HASH_DATA_SIZE)
 	{
-		printf("Fatal error: top size should be 1\n");
+		printf("Fatal error: top size should be %d\n", HASH_DATA_SIZE);
 		exit(0);
 	}
 
@@ -104,6 +104,9 @@ void BaseConvHashLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
                        conv_param.dilation((num_dilation_dims == 1) ? 0 : i);
   }
 #endif
+
+#if 0	//in our hash case, the channels cannot be obtained from the blob shape, but only from the data
+		//so we have init them in reshape stage
   // Configure output channels and groups.
   channels_ = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
   CHECK_GT(channels_, 0);
@@ -166,6 +169,7 @@ void BaseConvHashLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   kernel_dim_ = this->blobs_[0]->count(1);
   // Propagate gradients to the parameters (as directed by backward pass).
   this->param_propagate_down_.resize(this->blobs_.size(), true);
+#endif
 }
 
 //In this layer, the top structure is the same as the bottom structure, 
@@ -190,6 +194,14 @@ void BaseConvHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& b
 	std::vector<int> hash_data_shape(1, batch_hash_size * top_channels);
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
 	memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
+
+	std::vector<int> scalar_shape(1, 1);
+	top[CHANNEL_BLOB]->Reshape(scalar_shape);
+	top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+
+	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = (Dtype)top_channels;
+	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
+
 }
 
 template <typename Dtype>
@@ -202,6 +214,10 @@ void BaseConvHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 	  printf("*************Data not transferred. cannot reshape topHashData!\n**********");
 	  return;
   }
+
+  //init weight kernal in reshape stage
+  reshape_weight_bias(bottom);
+
   //reshape the top hash data
   reshape_topHashData(bottom, top);
 
@@ -259,6 +275,86 @@ void BaseConvHashLayer<Dtype>::reshape_colBuf(const vector<Blob<Dtype>*>& bottom
 		caffe_set(bias_multiplier_.count(), Dtype(1),
 			bias_multiplier_.mutable_cpu_data());
 	}
+}
+
+template <typename Dtype>
+void BaseConvHashLayer<Dtype>::reshape_weight_bias(const vector<Blob<Dtype> *>& bottom)
+{
+	//only reshape init once
+	if (m_weight_bias_inited_flag)
+	{
+		return;
+	}
+	m_weight_bias_inited_flag = true;
+
+
+	const ConvHashParameter &conv_param = this->layer_param_.conv_hash_param();
+	const int* kernel_shape_data = kernel_shape_.cpu_data();
+
+	channels_ = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	CHECK_GT(channels_, 0);
+	num_output_ = conv_param.num_output();
+	CHECK_GT(num_output_, 0);
+	if (reverse_dimensions()) {
+		conv_out_channels_ = channels_;
+		conv_in_channels_ = num_output_;
+	}
+	else {
+		conv_out_channels_ = num_output_;
+		conv_in_channels_ = channels_;
+	}
+	// Handle the parameters: weights and biases.
+	// - blobs_[0] holds the filter weights
+	// - blobs_[1] holds the biases (optional)
+	vector<int> weight_shape(2);
+	weight_shape[0] = conv_out_channels_;
+	weight_shape[1] = conv_in_channels_;
+	for (int i = 0; i < num_spatial_axes_; ++i) {
+		weight_shape.push_back(kernel_shape_data[i]);
+	}
+	bias_term_ = conv_param.bias_term();
+	vector<int> bias_shape(bias_term_, num_output_);
+	if (this->blobs_.size() > 0) {
+		CHECK_EQ(1 + bias_term_, this->blobs_.size())
+			<< "Incorrect number of weight blobs.";
+		if (weight_shape != this->blobs_[0]->shape()) {
+			Blob<Dtype> weight_shaped_blob(weight_shape);
+			LOG(FATAL) << "Incorrect weight shape: expected shape "
+				<< weight_shaped_blob.shape_string() << "; instead, shape was "
+				<< this->blobs_[0]->shape_string();
+		}
+		if (bias_term_ && bias_shape != this->blobs_[1]->shape()) {
+			Blob<Dtype> bias_shaped_blob(bias_shape);
+			LOG(FATAL) << "Incorrect bias shape: expected shape "
+				<< bias_shaped_blob.shape_string() << "; instead, shape was "
+				<< this->blobs_[1]->shape_string();
+		}
+		LOG(INFO) << "Skipping parameter initialization";
+	}
+	else {
+		if (bias_term_) {
+			this->blobs_.resize(2);
+		}
+		else {
+			this->blobs_.resize(1);
+		}
+		// Initialize and fill the weights:
+		// output channels x input channels per-group x kernel height x kernel width
+		this->blobs_[0].reset(new Blob<Dtype>(weight_shape));
+		shared_ptr<Filler<Dtype> > weight_filler(GetFiller<Dtype>(
+			conv_param.weight_filler()));
+		weight_filler->Fill(this->blobs_[0].get());
+		// If necessary, initialize and fill the biases.
+		if (bias_term_) {
+			this->blobs_[1].reset(new Blob<Dtype>(bias_shape));
+			shared_ptr<Filler<Dtype> > bias_filler(GetFiller<Dtype>(
+				conv_param.bias_filler()));
+			bias_filler->Fill(this->blobs_[1].get());
+		}
+	}
+	kernel_dim_ = this->blobs_[0]->count(1);
+	// Propagate gradients to the parameters (as directed by backward pass).
+	this->param_propagate_down_.resize(this->blobs_.size(), true);
 }
 
 template <typename Dtype>
@@ -469,7 +565,7 @@ int BaseConvHashLayer<Dtype>::writeDenseKernel_2_HF5(const char *filename)
 		return 0;
 	}
 	writeDense_2_HF5((const float*)blobs_[0]->cpu_data(), 
-		blobs_[0]->shape(0), kernel_shape_.cpu_data()[0], blobs_[0]->shape(1), filename);
+		blobs_[0]->shape(0), blobs_[0]->shape(2), blobs_[0]->shape(1), filename);
 	return 1;
 }
 

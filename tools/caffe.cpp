@@ -19,6 +19,7 @@ namespace bp = boost::python;
 #include <windows.h>
 #include "caffe/util/MyMacro.h"
 #include "caffe/layers/conv_hash_layer.hpp"
+#include "caffe/layers/pool_hash_layer.hpp"
 //**************************//
 using caffe::Blob;
 using caffe::Caffe;
@@ -446,7 +447,7 @@ void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 {
 	std::vector<Blob<float> *> bottom; //no use
 	const int struct_num = 3;
-	int top_blob_num = 1 + HASH_STRUCTURE_SIZE * struct_num + 1;
+	int top_blob_num = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * struct_num + 1;
 	top.resize(top_blob_num);
 	for (int i = 0; i < top_blob_num; i++)
 	{
@@ -473,9 +474,9 @@ void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 }
 
 void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
-	int num_output, int input_channels, int kernel_size, int dense_res)
+	int num_output, int kernel_size)
 {
-	const int top_blob_num = 1;
+	const int top_blob_num = HASH_DATA_SIZE;
 	top.resize(top_blob_num);	//only data updated, structure will share the same
 	for (int i = 0; i < top_blob_num; i++)
 	{
@@ -484,12 +485,14 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 
 	caffe::ConvHashParameter *conv_hash_param = new caffe::ConvHashParameter;
 	conv_hash_param->set_num_output(num_output);
-	conv_hash_param->set_input_channels(input_channels);
 	conv_hash_param->set_bias_term(true);
-	for (int c =0;c<input_channels;c++)
+
+	int channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	for (int i=0;i<channels;i++)
 	{
 		conv_hash_param->add_kernel_size(kernel_size);
 	}
+	
 
 	caffe::FillerParameter *w_filler = new caffe::FillerParameter;
 	w_filler->set_type("gaussian");
@@ -502,7 +505,6 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	b_filler->set_type("gaussian");
 	b_filler->set_std(1);
 	conv_hash_param->set_allocated_bias_filler(b_filler);
-	conv_hash_param->set_dense_res(dense_res);
 	
 
 	caffe::LayerParameter conv_hash_layer_param;
@@ -518,10 +520,14 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	//save dense to HDF5 for evaluation
 	BatchHashData bottom_batch;
 	blobs_2_batchHash(bottom, bottom_batch);
-	bottom_batch.m_channels = input_channels;
+	bottom_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
 	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "bottom");
-	std::vector<Blob<float> *> structed_top(1 + HASH_STRUCTURE_SIZE);
+	
+	std::vector<Blob<float> *> structed_top(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
 	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top[CHANNEL_BLOB] = top[CHANNEL_BLOB];
+	structed_top[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
 	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB];
 	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB];
 	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB];
@@ -531,6 +537,36 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	blobs_2_batchHash(structed_top, top_batch);
 	top_batch.m_channels = num_output;
 	writeBatchHash_2_denseFiles(top_batch, dense_res, "top");
+}
+
+void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
+	int stride)
+{
+	const int top_blob_num = HASH_DATA_SIZE;
+	top.resize(top_blob_num);	//only data updated, structure is already given
+	for (int i = 0; i < top_blob_num; i++)
+	{
+		top[i] = new Blob<float>();
+	}
+
+	caffe::PoolHashParameter *pool_hash_param = new caffe::PoolHashParameter;
+
+	int channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	for (int i = 0; i < channels; i++)
+	{
+		pool_hash_param->add_stride(stride);
+	}
+	pool_hash_param->set_pool(caffe::PoolHashParameter_PoolMethod_MAX);
+
+	caffe::LayerParameter pool_hash_layer_param;
+	pool_hash_layer_param.set_type("PoolvHash");
+	pool_hash_layer_param.set_allocated_pool_hash_param(pool_hash_param);
+
+	shared_ptr<Layer<float> > pool_conv_layer(new caffe::PoolHashLayer<float>(pool_hash_layer_param));
+	//setup 
+	pool_conv_layer->SetUp(bottom, top);
+	//forward
+	pool_conv_layer->Forward(bottom, top);
 }
 
 void test_hash()
@@ -551,20 +587,40 @@ void test_hash()
 
 	/*****************Conv layer***************************/
 	const int num_output = 10;
-	const int input_channels = 3;
 	const int kernel_size = 3;
-	const int dense_res = 64;
 	std::vector<Blob<float> *> conv_top;
-	std::vector<Blob<float>*> conv_bottom(1 + HASH_STRUCTURE_SIZE);
+	std::vector<Blob<float>*> conv_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
 	conv_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
+	conv_bottom[CHANNEL_BLOB] = data_top[CHANNEL_BLOB];
+	conv_bottom[DENSE_RES_BLOB] = data_top[DENSE_RES_BLOB];
 	conv_bottom[OFFSET_BLOB] = data_top[OFFSET_BLOB];
 	conv_bottom[POSTAG_BLOB] = data_top[POSTAG_BLOB];
 	conv_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
 	conv_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	conv_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
 
-	test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, input_channels, kernel_size, dense_res);
+	test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, kernel_size);
 	
+	/****************Pooling layer*****************************/
+	const int stride = 2;
+	std::vector<Blob<float> *> pool_top;
+	std::vector<Blob<float>*> pool_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE*2);
+	pool_bottom[HASH_DATA_BLOB] = conv_top[HASH_DATA_BLOB];
+	pool_bottom[CHANNEL_BLOB] = conv_top[CHANNEL_BLOB];
+	pool_bottom[DENSE_RES_BLOB] = conv_top[DENSE_RES_BLOB];
+	pool_bottom[OFFSET_BLOB] = data_top[OFFSET_BLOB];	//pool bottom struct
+	pool_bottom[POSTAG_BLOB] = data_top[POSTAG_BLOB];
+	pool_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
+	pool_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
+	pool_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
+	//pool top struct
+	pool_bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE] = data_top[OFFSET_BLOB + HASH_STRUCTURE_SIZE];	//pool bottom struct
+	pool_bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE] = data_top[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE] = data_top[M_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE] = data_top[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
+
+	test_pool_layer_forward(pool_bottom, pool_top, 2);
 	//do not handle memory, just for testing...
 	printf("\n");
 }

@@ -144,8 +144,6 @@ bool saveHashStruct(const HashData &one_hash, FILE *fp)
 {
 	fwrite(&one_hash.m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fwrite(&one_hash.m_rBar, sizeof(int), 1, fp);	//r, for offset table
-	fwrite(&one_hash.m_channels, sizeof(int), 1, fp);
-	fwrite(&one_hash.m_dense_res, sizeof(int), 1, fp);
 													//hash data
 	//offset data
 	const int r = one_hash.m_rBar * one_hash.m_rBar * one_hash.m_rBar;
@@ -434,9 +432,9 @@ void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashD
 	}
 	for (int i=0;i<batch_num;i++)
 	{
-		batch_hash.m_mBars[i] = (int)blobs[M_BAR_BLOB]->mutable_cpu_data()[i];
-		batch_hash.m_rBars[i] = (int)blobs[R_BAR_BLOB]->mutable_cpu_data()[i];
-		batch_hash.m_defNums[i] = (int)blobs[DEFNUM_BLOB]->mutable_cpu_data()[i];
+		batch_hash.m_mBars[i] = (int)blobs[M_BAR_BLOB]->cpu_data()[i];
+		batch_hash.m_rBars[i] = (int)blobs[R_BAR_BLOB]->cpu_data()[i];
+		batch_hash.m_defNums[i] = (int)blobs[DEFNUM_BLOB]->cpu_data()[i];
 	}
 }
 
@@ -449,8 +447,6 @@ CHashStructInfo::CHashStructInfo()
 	m_mBar = 0;
 	m_rBar = 0;
 	m_defNum = 0;
-	m_channels = 0;
-	m_dense_res = 0;
 }
 
 CHashStructInfo::~CHashStructInfo()
@@ -465,16 +461,12 @@ void CHashStructInfo::destroy()
 	m_mBar = 0;
 	m_rBar = 0;
 	m_defNum = 0;
-	m_dense_res = 0;
-	m_channels = 0;
 }
 
 int CHashStructInfo::save(FILE *fp) const
 {
 	fwrite(&m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fwrite(&m_rBar, sizeof(int), 1, fp);	//r, for offset table
-	fwrite(&m_channels, sizeof(int), 1, fp);
-	fwrite(&m_dense_res, sizeof(int), 1, fp);
 
 	const int m = m_mBar*m_mBar*m_mBar;
 	const int r = m_rBar * m_rBar * m_rBar;
@@ -501,8 +493,6 @@ int CHashStructInfo::load(FILE *fp)
 
 	fread(&m_mBar, sizeof(int), 1, fp);	//m, for hash table and position hash table
 	fread(&m_rBar, sizeof(int), 1, fp);	//r, for offset table
-	fread(&m_channels, sizeof(int), 1, fp);
-	fread(&m_dense_res, sizeof(int), 1, fp);
 
 	const int m = m_mBar*m_mBar*m_mBar;
 	const int r = m_rBar * m_rBar * m_rBar;
@@ -537,6 +527,8 @@ int CHashStructInfo::load(FILE *fp)
 CHierarchyHash::CHierarchyHash()
 {
 	m_hash_data = NULL;
+	m_dense_res = 0;
+	m_channels = 0;
 }
 
 CHierarchyHash::~CHierarchyHash()
@@ -547,6 +539,8 @@ CHierarchyHash::~CHierarchyHash()
 void CHierarchyHash::destroy()
 {
 	SAFE_VDELETE(m_hash_data);		//bottom hash data
+	m_dense_res = 0;
+	m_channels = 0;
 	destroyStructs();
 }
 
@@ -571,12 +565,11 @@ void CHierarchyHash::initStructs(int n)
 
 int CHierarchyHash::load(FILE *fp)
 {
-	int ori_channels = 0;
+	int ori_channels = m_channels;
 	int ori_mBar = 0;
 	if (m_vpStructs.size())
 	{
 		ori_mBar = m_vpStructs[0]->m_mBar;
-		ori_channels = m_vpStructs[0]->m_channels;
 	}
 	const int ori_m = ori_mBar * ori_mBar * ori_mBar;
 
@@ -607,14 +600,16 @@ int CHierarchyHash::load(FILE *fp)
 
 	//read bottom hash data
 	const int new_mBar = m_vpStructs[0]->m_mBar;
-	const int new_channels = m_vpStructs[0]->m_channels;
 	const int new_m = new_mBar * new_mBar * new_mBar;
-	if (new_m * new_channels > ori_m * ori_channels)	//need larger memory
+	
+	fread(&m_channels,sizeof(int),1,fp);
+	fread(&m_dense_res, sizeof(int), 1, fp);
+	if (new_m * m_channels > ori_m * ori_channels)	//need larger memory
 	{
 		SAFE_VDELETE(m_hash_data);
-		m_hash_data = new float[new_m*new_channels];
+		m_hash_data = new float[new_m*m_channels];
 	}
-	fread(m_hash_data, sizeof(float), new_m*new_channels, fp);
+	fread(m_hash_data, sizeof(float), new_m*m_channels, fp);
 
 	return 1;
 }
@@ -636,9 +631,10 @@ int CHierarchyHash::save(FILE *fp) const
 	}
 
 	const int mBar = m_vpStructs[0]->m_mBar;
-	const int channels = m_vpStructs[0]->m_channels;
 	const int m = mBar * mBar * mBar;
-	fwrite(m_hash_data, sizeof(float), m*channels, fp);
+	fwrite(&m_channels, sizeof(int), 1, fp);
+	fwrite(&m_dense_res, sizeof(int), 1, fp);
+	fwrite(m_hash_data, sizeof(float), m*m_channels, fp);
 
 	return 1;
 }
@@ -695,5 +691,38 @@ int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char 
 		batch_posTag_ptr += m;
 	}
 	delete[]dense_buf;
+	return 1;
+}
+
+int writeDense_2_Grid(const float *dense_data, int res, int channels, const char *filename)
+{
+	FILE *fp = fopen(filename, "wb");
+	if (!fp)
+	{
+		printf("Error: failed to load dense from %s\n", filename);
+		return 0;
+	}
+	fwrite(&channels, sizeof(int), 1, fp);
+	fwrite(&res, sizeof(int), 1, fp);
+	fwrite(&res, sizeof(int), 1, fp);
+	fwrite(&res, sizeof(int), 1, fp);
+	
+	//fwrite(dense_data, sizeof(float), channels*res*res*res, fp);
+	//NOTE: the grid memory order is D H W C
+	int tn = res*res*res;
+	const float *data_ptr = dense_data;
+	for (int i=0;i<tn;i++)
+	{
+		const float *cur_ptr = data_ptr;
+		for (int c=0;c<channels;c++)
+		{
+			fwrite(cur_ptr,sizeof(float),1,fp);
+			cur_ptr += tn;
+		}
+
+		data_ptr++;
+	}
+	
+	fclose(fp);
 	return 1;
 }

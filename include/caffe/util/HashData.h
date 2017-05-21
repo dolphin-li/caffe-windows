@@ -179,11 +179,9 @@ public:
 	int m_mBar;
 	int m_rBar;
 	int m_defNum;
-	int m_dense_res;	//corresponded to the dense data resolution
-	int m_channels;
 };
 
-
+//preloaded hierhash
 class CHierarchyHash
 {
 public:
@@ -196,6 +194,8 @@ public:
 	int save(FILE *fp) const;
 public:
 	float *m_hash_data;		//bottom hash data
+	int m_dense_res;	//bottom dense res
+	int m_channels;		//bottom channel
 	std::vector<CHashStructInfo*> m_vpStructs;
 };
 
@@ -203,5 +203,7 @@ public:
 int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, const char *filename);
 
 int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix);
+
+int writeDense_2_Grid(const float *dense_data, int res, int channels, const char *filename);
 
 #endif

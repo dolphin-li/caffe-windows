@@ -15,15 +15,17 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 
 #define INVALID_POSTAG 9999
 
-//blobs to store hash
-#define HASH_STRUCTURE_SIZE 7	//offset, postag, m_bar, r_bar, def_num
-//blob idx 
-#define HASH_DATA_BLOB 0
-#define OFFSET_BLOB 1
-#define POSTAG_BLOB 2
-#define M_BAR_BLOB 3
-#define R_BAR_BLOB 4
-#define DEFNUM_BLOB 5
-#define DENSE_RES_BLOB 6	//
-#define CHANNEL_BLOB 7
+
+#define HASH_STRUCTURE_SIZE 5	//offset, postag, m_bar, r_bar, def_num
+#define HASH_DATA_SIZE 3	//layer output blob num: data, channel, dense_res
+//data blob idx 
+#define HASH_DATA_BLOB 0	
+#define DENSE_RES_BLOB 1	
+#define CHANNEL_BLOB 2
+//structure blob idx
+#define OFFSET_BLOB 3
+#define POSTAG_BLOB 4
+#define M_BAR_BLOB 5
+#define R_BAR_BLOB 6
+#define DEFNUM_BLOB 7
 #endif

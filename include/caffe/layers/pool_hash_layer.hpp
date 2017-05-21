@@ -27,7 +27,6 @@ namespace caffe {
                          const vector<Blob<Dtype>*>& top);
 
     virtual inline const char* type() const { return "PoolHash"; }
-    virtual inline int ExactNumBottomBlobs() const { return 1; }
     virtual inline int MinTopBlobs() const { return 1; }
     //// MAX POOL layers can output an extra top blob for the mask;
     //// others can only output the pooled inputs.
@@ -43,7 +42,8 @@ namespace caffe {
 	  void forward_cpu_max(const float *bottom_hash, const unsigned char *bottom_offset,
 		  const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
 		  float *top_hash, const unsigned char *top_offset,
-		  const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar, int dense_res);
+		  const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar, 
+		  int *mask, int channels, int dense_res);
   protected:
     virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
                              const vector<Blob<Dtype>*>& top);

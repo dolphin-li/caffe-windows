@@ -17,7 +17,7 @@ template <typename Dtype>
 class BaseConvHashLayer : public Layer<Dtype> {
  public:
   explicit BaseConvHashLayer(const LayerParameter& param)
-      : Layer<Dtype>(param) {}
+	  : Layer<Dtype>(param) { m_weight_bias_inited_flag = false; }
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
   virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
@@ -61,7 +61,8 @@ class BaseConvHashLayer : public Layer<Dtype> {
   void reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 	  const vector<Blob<Dtype>*>& top);
   void reshape_colBuf(const vector<Blob<Dtype>*>& bottom);
-
+  //NOTE: unlike conv_layer, the input channels can be directly got 
+  void reshape_weight_bias(const vector<Blob<Dtype>*>& bottom);	
   /// @brief The spatial dimensions of a filter kernel.
   Blob<int> kernel_shape_;
   /// @brief The spatial dimensions of the stride.
@@ -85,6 +86,8 @@ class BaseConvHashLayer : public Layer<Dtype> {
   int conv_out_channels_;
   int conv_in_channels_;
   int kernel_dim_;
+
+  bool m_weight_bias_inited_flag;
 
   Blob<Dtype> col_buffer_;
   Blob<Dtype> out_col_buffer_;

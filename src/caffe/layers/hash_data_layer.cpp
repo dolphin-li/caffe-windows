@@ -238,8 +238,8 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		printf("Fatal error: HierHashes_2_blobs failed! no structures!\n");
 		exit(0);
 	}
-	const int channels = vpHierHashes[0]->m_vpStructs[0]->m_channels;
-	const int bottom_dense_res = vpHierHashes[0]->m_vpStructs[0]->m_dense_res;
+	const int channels = vpHierHashes[0]->m_channels;
+	const int bottom_dense_res = vpHierHashes[0]->m_dense_res;
 	//record the channels
 	channels_ = channels;
 
@@ -250,7 +250,7 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 	}
 
 	//reshape blob
-	if (top_blobs.size() != struct_num * HASH_STRUCTURE_SIZE + 2)	
+	if (top_blobs.size() != HASH_DATA_SIZE + struct_num * HASH_STRUCTURE_SIZE + 1)	//data + n*struct + label
 		//structure info for multi layers + one hash data + one label
 	{
 		printf("Error: hash data layer: top blobs should be have %d structus and 1 hash data!\n",struct_num);
@@ -270,11 +270,13 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 	}
 	
 	std::vector<int> scalar_shape(1, 1);	//the blob only has one scalar value
-	for (int i = 0; i < struct_num; i++)	//useless in the data layer stage, just reshape
+	for (int i = 0; i < struct_num; i++)	
 	{
-		top_blobs[DENSE_RES_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(scalar_shape);
-		top_blobs[CHANNEL_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(scalar_shape);
+		top_blobs[DENSE_RES_BLOB]->Reshape(scalar_shape);
+		top_blobs[CHANNEL_BLOB]->Reshape(scalar_shape);
 	}
+	top_blobs[DENSE_RES_BLOB ]->mutable_cpu_data()[0] = (Dtype)(bottom_dense_res);
+	top_blobs[CHANNEL_BLOB]->mutable_cpu_data()[0] = (Dtype)channels_;
 	
 	//fill the value of m_bar, r_bar, define_num, and gather the total size for batched offset and pos_tag, 
 	//gather the total size of m, and record each m && r, offset, postag, and bottom_hash_data
@@ -285,10 +287,6 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		Blob<Dtype>* mBar_blob = top_blobs[M_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* rBar_blob = top_blobs[R_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* defNum_blob = top_blobs[DEFNUM_BLOB + si * HASH_STRUCTURE_SIZE];
-
-		//no use, just simply fill the value for debug
-		top_blobs[DENSE_RES_BLOB + si * HASH_STRUCTURE_SIZE]->mutable_cpu_data()[0] = (Dtype)(bottom_dense_res/pow(2,si));
-		top_blobs[CHANNEL_BLOB + si * HASH_STRUCTURE_SIZE]->mutable_cpu_data()[0] = (Dtype)channels_;
 
 		int batch_m = 0;
 		int batch_r = 0;
@@ -408,8 +406,8 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   {
 	  m_batch_perm[i] = data_permutation_[i];
   }
-  //NOTE: we have to convert hashes to blobs here. As the following layer need the shape information of its bottom
-  HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
+  
+  //HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
   //reshape the top label, as the other blobs' shape will change every batch
  
   vector<int> top_label_shape;
@@ -427,7 +425,7 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   printf("\n");
   
   const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
-  int label_blob_idx = 1 + HASH_STRUCTURE_SIZE * structure_num;
+  int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
   top[label_blob_idx]->Reshape(top_label_shape);
 }
 
@@ -498,7 +496,7 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 
   //send labels
   const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
-  int label_blob_idx = 1 + HASH_STRUCTURE_SIZE * structure_num;
+  int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
   for (int i = 0; i < batch_size; ++i)
   {
 	  int data_dim = top[label_blob_idx]->count() / top[label_blob_idx]->shape(0);
@@ -512,24 +510,23 @@ template <typename Dtype>
 void HashDataLayer<Dtype>::save_blobs_to_hashFiles(const std::vector<Blob<Dtype>*>& top_blobs, const char *main_body)
 {
 	int top_num = (int)top_blobs.size();
-	if (top_num%HASH_STRUCTURE_SIZE!=2)
+	const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
+	const int dense_res = m_vpHierHashes[0]->m_dense_res;
+	if (top_num!=HASH_DATA_SIZE + structure_num * HASH_STRUCTURE_SIZE + 1)
 	{
 		printf("Hash data layer error: top num not expected!\n");
 		exit(0);
 	}
-	const int struct_num = top_num / HASH_STRUCTURE_SIZE;
 	char buf[128];
 
 	//save other structures
-	for (int si = 1; si < struct_num; si++)
+	for (int si = 1; si < structure_num; si++)
 	{
 		Blob<Dtype>* offset_blob = top_blobs[OFFSET_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* postag_blob = top_blobs[POSTAG_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* mBar_blob = top_blobs[M_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* rBar_blob = top_blobs[R_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* defNum_blob = top_blobs[DEFNUM_BLOB + si * HASH_STRUCTURE_SIZE];
-		Blob<Dtype>* channel_blob = top_blobs[CHANNEL_BLOB + si * HASH_STRUCTURE_SIZE];
-		Blob<Dtype>* dense_res_blob = top_blobs[DENSE_RES_BLOB + si * HASH_STRUCTURE_SIZE];
 
 		int m, r;	//m_bar*m_bar*m_bar, r_bar*r_bar*r_bar
 		unsigned char *batch_offset_ptr = (unsigned char *)offset_blob->cpu_data();
@@ -548,8 +545,8 @@ void HashDataLayer<Dtype>::save_blobs_to_hashFiles(const std::vector<Blob<Dtype>
 			one_hash.m_defNum = (int)defNum_blob->cpu_data()[j];
 			one_hash.m_offset_data = batch_offset_ptr;
 			one_hash.m_position_tag = batch_posTag_ptr;
-			one_hash.m_channels = (int)channel_blob->cpu_data()[0];
-			one_hash.m_dense_res = (int)dense_res_blob->cpu_data()[0];
+			one_hash.m_channels = channels_;
+			one_hash.m_dense_res = dense_res;
 			one_hash.m_hash_data = NULL;
 			saveHashStruct(one_hash, buf);
 
@@ -569,8 +566,7 @@ void HashDataLayer<Dtype>::save_blobs_to_hashFiles(const std::vector<Blob<Dtype>
 		Blob<Dtype>* rBar_blob = top_blobs[R_BAR_BLOB];
 		Blob<Dtype>* defNum_blob = top_blobs[DEFNUM_BLOB];
 		Blob<Dtype>* hashdata_blob = top_blobs[HASH_DATA_BLOB];
-		Blob<Dtype>* channel_blob = top_blobs[CHANNEL_BLOB];
-		Blob<Dtype>* dense_res_blob = top_blobs[DENSE_RES_BLOB];
+
 		int m, r;	//m_bar*m_bar*m_bar, r_bar*r_bar*r_bar
 		unsigned char *batch_offset_ptr = (unsigned char *)offset_blob->cpu_data();
 		PACKED_POSITION *batch_posTag_ptr = (PACKED_POSITION *)postag_blob->cpu_data();
@@ -588,8 +584,8 @@ void HashDataLayer<Dtype>::save_blobs_to_hashFiles(const std::vector<Blob<Dtype>
 			one_hash.m_defNum = (int)defNum_blob->cpu_data()[j];
 			one_hash.m_offset_data = batch_offset_ptr;
 			one_hash.m_position_tag = batch_posTag_ptr;
-			one_hash.m_channels = (int)channel_blob->cpu_data()[0];
-			one_hash.m_dense_res = (int)dense_res_blob->cpu_data()[0];
+			one_hash.m_channels = channels_;
+			one_hash.m_dense_res = dense_res;
 			one_hash.m_hash_data = batch_hash_ptr;
 			saveHash(one_hash, buf);
 

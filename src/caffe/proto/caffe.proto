@@ -1083,7 +1083,6 @@ message PoolHashParameter {
   repeated uint32 pad = 4; // The padding size (equal in Y, X)
   repeated uint32 kernel_size = 2; // The kernel size (square)
   repeated uint32 stride = 3; // The stride (equal in Y, X)
-  optional uint32 input_channels = 20; 
 }
 
 
