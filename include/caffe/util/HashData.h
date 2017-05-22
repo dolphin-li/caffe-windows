@@ -206,4 +206,23 @@ int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char 
 
 int writeDense_2_Grid(const float *dense_data, int res, int channels, const char *filename);
 
+/************************************UTILS********************************/
+void calc_sum(const float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, float weight, float *out_weighted_sum);
+void hash_add_scalar(float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, const float *to_adds);	
+void hash_subtract_scalar(float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, const float *to_substracts);
+void hash_mult_scalar(float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, const float *to_mults);
+//used for calc variance
+void calc_square_sum(const float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, float weight, float *out_weighted_sum);
+
+
 #endif

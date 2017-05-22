@@ -446,6 +446,7 @@ message LayerParameter {
   optional HashDataParameter hash_data_param = 933;
   optional ConvHashParameter conv_hash_param = 934;
   optional PoolHashParameter pool_hash_param = 935;
+  optional BNHashParameter bn_hash_param = 936;
 }
 
 // Message that stores parameters used to apply transformation
@@ -567,6 +568,22 @@ message BatchNormParameter {
     CUDNN = 2;
   }
   optional Engine engine = 15 [default = DEFAULT];
+}
+
+message BNHashParameter {
+  // If false, accumulate global mean/variance values via a moving average. If
+  // true, use those accumulated values instead of computing mean/variance
+  // across the batch.
+  optional bool use_global_stats = 1;
+  // How much does the moving average decay each iteration?
+  optional float moving_average_fraction = 2 [default = .99];
+  // Small value to add to the variance estimate so that we don't divide by
+  // zero.
+  optional float eps = 3 [default = 1e-5];
+  optional bool disable_mean = 4 [default = false];
+  optional bool disable_variance = 5 [default = false];
+  optional FillerParameter scale_filler = 7;
+  optional FillerParameter bias_filler = 8;
 }
 
 message BiasParameter {

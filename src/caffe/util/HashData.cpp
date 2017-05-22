@@ -726,3 +726,135 @@ int writeDense_2_Grid(const float *dense_data, int res, int channels, const char
 	fclose(fp);
 	return 1;
 }
+
+
+
+/***********************UTILS*************************/
+void calc_sum(const float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, float weight, float *out_weighted_sum)
+{
+	const int m = m_bar * m_bar * m_bar;
+	
+	memset(out_weighted_sum, 0, sizeof(float)*channels);
+
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		const float *hash_ptr = &hash[v];
+		for (int c = 0; c < channels; c++)
+		{
+			out_weighted_sum[c] += (*hash_ptr) * weight;
+			hash_ptr += m;
+		}
+
+	}
+}
+
+
+void hash_add_scalar(float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, const float *to_adds)
+{
+	const int m = m_bar * m_bar * m_bar;
+	
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		float *hash_ptr = &hash[v];
+		for (int c = 0; c < channels; c++)
+		{
+			*hash_ptr += to_adds[c];
+			hash_ptr += m;
+		}
+	}
+}
+
+
+void hash_subtract_scalar(float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, const float *to_subtracts)
+{
+	const int m = m_bar * m_bar * m_bar;
+
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		float *hash_ptr = &hash[v];
+		for (int c = 0; c < channels; c++)
+		{
+			*hash_ptr -= to_subtracts[c];
+			hash_ptr += m;
+		}
+	}
+}
+
+void hash_mult_scalar(float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, const float *to_mults)
+{
+	const int m = m_bar * m_bar * m_bar;
+
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		float *hash_ptr = &hash[v];
+		for (int c = 0; c < channels; c++)
+		{
+			*hash_ptr *= to_mults[c];
+			hash_ptr += m;
+		}
+	}
+}
+
+
+void calc_square_sum(const float *hash, const unsigned char *offset,
+	const PACKED_POSITION *posTag, int m_bar, int r_bar,
+	int channels, int def_num, float weight, float *out_weighted_sum)
+{
+	const int m = m_bar * m_bar * m_bar;
+
+	memset(out_weighted_sum, 0, sizeof(float)*channels);
+
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		const float *hash_ptr = &hash[v];
+		for (int c = 0; c < channels; c++)
+		{
+			out_weighted_sum[c] += (*hash_ptr) * (*hash_ptr) * weight;
+			hash_ptr += m;
+		}
+
+	}
+}
