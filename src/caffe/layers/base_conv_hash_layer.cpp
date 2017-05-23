@@ -572,6 +572,32 @@ int BaseConvHashLayer<Dtype>::writeBias_2_HF5(const char *filename)
 }
 
 
+
+template <typename Dtype>
+int BaseConvHashLayer<Dtype>::writeDenseKernelDif_2_HF5(const char *filename)
+{
+	if (blobs_.size() < 1)
+	{
+		return 0;
+	}
+	writeDense_2_HF5((const float*)blobs_[0]->cpu_diff(),
+		blobs_[0]->shape(0), blobs_[0]->shape(2), blobs_[0]->shape(1), filename);
+	return 1;
+}
+
+template <typename Dtype>
+int BaseConvHashLayer<Dtype>::writeBiasDif_2_HF5(const char *filename)
+{
+	if (blobs_.size() < 2)
+	{
+		return 0;
+	}
+	writeDense_2_HF5((const float*)blobs_[1]->cpu_diff(),
+		1, 1, blobs_[1]->shape(0), filename);
+	return 1;
+}
+
+
 #endif  // !CPU_ONLY
 
 

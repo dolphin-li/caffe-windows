@@ -524,7 +524,7 @@ void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 #endif
 }
 
-void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
+caffe::ConvHashLayer<float> *test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
 	int num_output, int kernel_size)
 {
 	const int top_blob_num = HASH_DATA_SIZE;
@@ -564,7 +564,7 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	conv_hash_layer_param.set_type("ConvHash");
 	conv_hash_layer_param.set_allocated_conv_hash_param(conv_hash_param);
 
-	shared_ptr<Layer<float> > hash_conv_layer(new caffe::ConvHashLayer<float>(conv_hash_layer_param));
+	caffe::ConvHashLayer<float> *hash_conv_layer = new caffe::ConvHashLayer<float>(conv_hash_layer_param);
 	//setup 
 	hash_conv_layer->SetUp(bottom, top);
 	//forward
@@ -604,6 +604,62 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	release_blobs(gpu_top);
 	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
 #endif
+
+	return hash_conv_layer;
+}
+
+void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, const std::vector<Blob<float> *> &bottom, 
+	const std::vector<Blob<float> *> &top)
+{
+	//random init top dif
+	float *top_hash_dif = (float*)top[HASH_DATA_BLOB]->mutable_cpu_diff();
+	const unsigned char* offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int top_channels = (int)top[CHANNEL_BLOB]->cpu_data()[0];
+	const float invRand = 1.f / (float)RAND_MAX;
+	for (int i = 0; i < batch_num; ++i)
+	{
+		float *top_dif = top_hash_dif;
+
+		const unsigned char* offset_data = offset_ptr;
+		const PACKED_POSITION *pos_tags = posTag_ptr;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		//init to zero
+		memset(top_dif, 0, sizeof(float)*m*top_channels);
+		//fill top dif randomly
+		float *top_dif_ptr = top_dif;
+		for (int v = 0; v < m; v++)
+		{
+			//if the hash voxel is undefined, skip
+			if (!ishashVoxelDefined(&pos_tags[v]))
+			{
+				top_dif_ptr++;
+				continue;
+			}
+			float *cur_dif_ptr = top_dif_ptr;
+			for (int c=0;c<top_channels;c++)
+			{
+				*cur_dif_ptr = (float)rand() * invRand;
+				cur_dif_ptr += m;
+			}
+			top_dif_ptr++;
+		}
+
+
+		//to next hash
+		offset_ptr += r * 3;
+		posTag_ptr += m;
+		top_hash_dif += m * top_channels;
+	}
+	std::vector<bool> bp_flag; //no use
+	pConvLayer->Backward(top, bp_flag,bottom);
 }
 
 void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
@@ -680,8 +736,8 @@ void test_hash()
 	conv_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
 	conv_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
 
-	test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, kernel_size);
-	
+	caffe::ConvHashLayer<float> *pConvLayer = test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, kernel_size);
+	test_hash_conv_layer_backward(pConvLayer, conv_bottom, conv_top);
 	/****************Pooling layer*****************************/
 	const int stride = 2;
 	std::vector<Blob<float> *> pool_top;

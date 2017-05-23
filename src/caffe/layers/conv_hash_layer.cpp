@@ -114,7 +114,7 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	  {
 		  this->backward_cpu_bias((float*)bias_diff, (const float*)out_col_buffer_.cpu_data(),defNum);
 	  }
-	  if (this->param_propagate_down_[0] || propagate_down[i]) 
+	  if (this->param_propagate_down_[0])// || propagate_down[i]) 
 	  {  
 			// gradient w.r.t. weight. Note that we will accumulate diffs.
 			if (this->param_propagate_down_[0]) {
@@ -122,7 +122,7 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 					(float*)weight_diff,channels_,num_output_,defNum);
 			}
 			// gradient w.r.t. bottom data, if necessary.
-			if (propagate_down[i]) 
+			//if (propagate_down[i]) 
 			{
 				//NOTE: now col_buf is updated to bottom_dif in backward_cpu_gemm
 				this->backward_cpu_gemm((const float*)out_col_buffer_.cpu_data(), channels_,
