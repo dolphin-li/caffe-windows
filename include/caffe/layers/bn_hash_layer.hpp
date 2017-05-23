@@ -60,6 +60,13 @@ protected:
 	void init_self_blob(const vector<Blob<Dtype>*>& bottom);
 	void reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 		const vector<Blob<Dtype>*>& top);
+
+	// convert data between hash and temp_;
+	// data in temp_ are those valid voxels stored channel wise.
+	void forward_hash2temp_gpu(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top);
+	void forward_temp2hash_gpu(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top);
 protected:
   Blob<Dtype> mean_, variance_;
   bool use_global_stats_;
@@ -70,8 +77,8 @@ protected:
   int channels_;
   int batch_hash_size_;	//total m
   bool m_self_blob_init_flag;
-  Blob<Dtype> temp_, inv_sqrt_var_;
-
+  Blob<Dtype> temp_, temp2_, inv_sqrt_var_;
+  Blob<Dtype> mean_multiplier_;
 };
 
 }  // namespace caffe

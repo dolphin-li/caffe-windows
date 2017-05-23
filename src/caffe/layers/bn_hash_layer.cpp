@@ -102,17 +102,36 @@ void BNHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 
 template <typename Dtype>
 void BNHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
-      const vector<Blob<Dtype>*>& top) 
+	const vector<Blob<Dtype>*>& top)
 {
 	init_self_blob(bottom);
 	reshape_topHashData(bottom, top);
 
-	  vector<int> sz;
-	  sz.push_back(channels_);
-	  mean_.Reshape(sz);
-	  variance_.Reshape(sz);
-	  temp_.Reshape(sz);
-	  inv_sqrt_var_.Reshape(sz);
+	vector<int> sz;
+	sz.push_back(channels_);
+	mean_.Reshape(sz);
+	variance_.Reshape(sz);
+	inv_sqrt_var_.Reshape(sz);
+
+	// reshape temp to be channels * defNums
+	const int batch_num = bottom[M_BAR_BLOB]->shape(0);
+	int total_defNum = 0;
+	for (int i = 0; i < batch_num; i++)
+		total_defNum += (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+	CHECK_GT(total_defNum, 0);
+
+	// tmp to store the valid hash data, tmp2 store tmp^2
+	vector<int> sz2;
+	sz2.push_back(channels_);
+	sz2.push_back(total_defNum);
+	temp_.Reshape(sz2);
+	temp2_.Reshape(sz2);
+
+	// a multipler for Mv
+	vector<int> sz3;
+	sz3.push_back(total_defNum);
+	mean_multiplier_.Reshape(sz3);
+	caffe_set(mean_multiplier_.count(), Dtype(1), mean_multiplier_.mutable_cpu_data());
 }
 
 
@@ -390,20 +409,6 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 #ifdef CPU_ONLY
 STUB_GPU(BNHashLayer);
 #endif
-
-template <typename Dtype>
-void BNHashLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
-	const vector<Blob<Dtype>*>& top)
-{
-
-}
-
-template <typename Dtype>
-void BNHashLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
-{
-
-}
 
 INSTANTIATE_CLASS(BNHashLayer);
 REGISTER_LAYER_CLASS(BNHash);
