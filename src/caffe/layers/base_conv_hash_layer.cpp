@@ -439,48 +439,42 @@ void BaseConvHashLayer<Dtype>::forward_cpu_bias(float* out_col_buf, const float*
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::backward_cpu_gemm(const Dtype* output,
-    const Dtype* weights, Dtype* input) 
+void BaseConvHashLayer<Dtype>::backward_cpu_gemm(const float *out_col_buf,
+	int bottom_channels, int top_channels, int defined_voxel_num, float *col_buf)
 {
-	//TODO:
-  //Dtype* col_buff = col_buffer_.mutable_cpu_data();
-  //if (is_1x1_) {
-  //  col_buff = input;
-  //}
-  //for (int g = 0; g < group_; ++g) {
-  //  caffe_cpu_gemm<Dtype>(CblasTrans, CblasNoTrans, kernel_dim_,
-  //      conv_out_spatial_dim_, conv_out_channels_ / group_,
-  //      (Dtype)1., weights + weight_offset_ * g, output + output_offset_ * g,
-  //      (Dtype)0., col_buff + col_offset_ * g);
-  //}
-  //if (!is_1x1_) {
-  //  conv_col2im_cpu(col_buff, input);
-  //}
+	const int *kernel_shape = kernel_shape_.cpu_data();
+	const int kernel_size = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
+
+	////convert the top dif to out col buffer
+	//top_hash2col_cpu(top_hash_dif, top_posTag,
+	//	m_bar, top_channels,
+	//	defined_voxel_num, (float*)out_col_buffer_.mutable_cpu_data());
+
+	//delta_x = WT * delta_y
+    caffe_cpu_gemm<float>(CblasTrans, CblasNoTrans, bottom_channels*kernel_size,
+        defined_voxel_num, top_channels,
+        1.f, (const float*)this->blobs_[0]->cpu_data(), out_col_buf,
+        0.f, col_buf);
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::weight_cpu_gemm(const Dtype* input,
-    const Dtype* output, Dtype* weights) {
-	//TODO:
-  //const Dtype* col_buff = input;
-  //if (!is_1x1_) {
-  //  conv_im2col_cpu(input, col_buffer_.mutable_cpu_data());
-  //  col_buff = col_buffer_.cpu_data();
-  //}
-  //for (int g = 0; g < group_; ++g) {
-  //  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasTrans, conv_out_channels_ / group_,
-  //      kernel_dim_, conv_out_spatial_dim_,
-  //      (Dtype)1., output + output_offset_ * g, col_buff + col_offset_ * g,
-  //      (Dtype)1., weights + weight_offset_ * g);
-  //}
+void BaseConvHashLayer<Dtype>::weight_cpu_gemm(const float *col_buf, const float* out_col_buf, float *weight_dif,
+	int bottom_channels, int top_channels, int defined_voxel_num)
+{
+	const int *kernel_shape = kernel_shape_.cpu_data();
+	const int kernel_size = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
+    
+	caffe_cpu_gemm<float>(CblasNoTrans, CblasTrans, top_channels,
+		bottom_channels*kernel_size, defined_voxel_num,
+		1.f, out_col_buf, col_buf,
+		1.f, weight_dif);
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::backward_cpu_bias(Dtype* bias,
-    const Dtype* input) {
-	//TODO:
-  //caffe_cpu_gemv<Dtype>(CblasNoTrans, num_output_, out_spatial_dim_, 1.,
-  //    input, bias_multiplier_.cpu_data(), 1., bias);
+void BaseConvHashLayer<Dtype>::backward_cpu_bias(float* bias, const float* out_col_buf, int defined_voxel_num)
+{
+	caffe_cpu_gemv<float>(CblasNoTrans, num_output_, defined_voxel_num, 1.,
+		out_col_buf, (const float*)bias_multiplier_.cpu_data(), 1., bias);
 }
 
 #ifndef CPU_ONLY
@@ -735,6 +729,154 @@ int conv_col2hash_cpu(const PACKED_POSITION *pos_tags, float *out_hash_data,
 }
 
 
+//used for BP, convert the top (dif) to col
+int top_hash2col_cpu(const float *hash_data, const PACKED_POSITION *pos_tags,
+	int m_bar, int out_channels, int defined_num, float* col_buff)
+{
+	//col is reception field: input_channels * KD * KH * KW; row: spatial domain
+	const int m = m_bar * m_bar * m_bar;
+	const float *data_ptr = hash_data;
+	float *col_ptr = col_buff;
+	const int cols = defined_num;
+	//to be safe, init out to zero
+	memset(col_buff, 0, sizeof(float)*defined_num*out_channels);
+
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&pos_tags[v]))
+		{
+			data_ptr++;
+			continue;
+		}
+
+		const float *cur_data_ptr = data_ptr;
+		float *cur_row_ptr = col_ptr;
+		for (int c = 0; c < out_channels; c++)
+		{
+			*cur_row_ptr = *cur_data_ptr;
+			cur_data_ptr += m;
+			cur_row_ptr += cols;
+		}
+
+		col_ptr++;
+		data_ptr++;
+	}
+	return 1;
+}
+
+
+int bottom_col2hash_cpu(float* hash_data, const unsigned char *offset_data, const PACKED_POSITION *position_tags,
+	const int kernel_shape[3],	//D, H, W
+	int m_bar, int r_bar, int channels, int defined_num,
+	int dense_res, const float* col_buff)
+{
+	//col is reception field: input_channels * KD * KH * KW; row: spatial domain
+	const int m = m_bar * m_bar * m_bar;
+	//const float *data_ptr = hash_data;
+	const float *col_ptr = col_buff;
+
+	const int hx = kernel_shape[0] / 2;
+	const int hy = kernel_shape[1] / 2;
+	const int hz = kernel_shape[2] / 2;
+	const int kernel_dim = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
+	const int r2 = r_bar * r_bar;
+	const int m2 = m_bar * m_bar;
+	const int rows = kernel_dim * channels;
+	const int cols = defined_num;
+	//for pointer increment
+	const int cross_channel_stride = cols * kernel_dim;
+
+
+	//init hash vals to zero
+	memset(hash_data, 0, sizeof(float)*m * channels);
+
+	int counter = 0;	//for debug
+	for (int v = 0; v < m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&position_tags[v]))
+		{
+			//data_ptr++;
+			continue;
+		}
+		counter++;
+		///////////////////////////////////////////
+
+		//get the real voxel position from the position tag
+		int cx, cy, cz;
+		xyz_from_pack(position_tags[v], cx, cy, cz);	//get the voxel position mapped to this hash
+														///////////////////////////////////////////////
+
+														//loop over neighbors to fill the column
+		int min_x = cx - hx;
+		int min_y = cy - hy;
+		int min_z = cz - hz;
+		int mx, my, mz;
+		const float *cur_row = col_ptr;
+		for (int nz = min_z; nz < min_z + kernel_shape[2]; nz++)
+		{
+			for (int ny = min_y; ny < min_y + kernel_shape[1]; ny++)
+			{
+				for (int nx = min_x; nx < min_x + kernel_shape[0]; nx++)
+				{
+					if (nx < 0 || ny < 0 || nz < 0 || nx >= dense_res || ny >= dense_res || nz >= dense_res)
+					{
+						//just skip, as the values are inited as zeros
+						cur_row += cols;
+						continue;
+					}
+					//hash to get hash position
+					Hash(nx, ny, nz, mx, my, mz,
+						offset_data, m_bar, r_bar, r2);
+					const int m_idx = NXYZ2I(mx, my, mz, m_bar, m2);
+
+					if (!ishashVoxelDefined(&position_tags[m_idx]))	//the hash voxel is undefined
+					{
+						//just skip
+						cur_row += cols;
+						continue;
+					}
+
+					int stored_x, stored_y, stored_z;
+					xyz_from_pack(position_tags[m_idx], stored_x, stored_y, stored_z);
+					if (nx != stored_x || ny != stored_y || nz != stored_z)	//the neighbor is an undefined voxel
+					{
+						//just skip
+						cur_row += cols;
+						continue;
+					}
+
+					//accumulate the value at cur_row and corresponding channels to the hash data
+					float *hash_ptr = &hash_data[m_idx];
+					const float *fill_row_ptr = cur_row;
+					for (int c = 0; c < channels; c++)
+					{
+						*hash_ptr += *fill_row_ptr;	//accumulate the value to the hash
+						fill_row_ptr += cross_channel_stride;
+						hash_ptr += m;
+					}
+					cur_row += cols;
+				}
+			}
+		}
+
+
+		col_ptr++;
+		//data_ptr++;
+	}
+
+	if (counter != defined_num)
+	{
+		printf("Fatal error: defined num not match!\n");
+		exit(0);
+	}
+
+	printf("col buffer size <%d, %d>\n", rows, counter);
+
+
+	return 1;
+}
 
 INSTANTIATE_CLASS(BaseConvHashLayer);
 

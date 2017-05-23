@@ -646,6 +646,7 @@ void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vect
 #endif
 }
 
+
 void test_hash()
 {
 	printf("Testing hash data layer...\n");
