@@ -441,6 +441,7 @@
     <CudaCompile Include="..\..\src\caffe\layers\pairwise_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\parameter_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\permute_layer.cu" />
+    <CudaCompile Include="..\..\src\caffe\layers\pool_hash_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\predict_box_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\proposal_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\psroi_pooling_layer.cu" />

@@ -6,46 +6,7 @@
 #include "caffe/layers/base_conv_hash_layer.hpp"
 #include "caffe/util/MyMacro.h"
 
-#define DUMP_2_TXT 0
-
 namespace caffe {
-
-	__device__ __host__ inline void xyz_from_pack_g(PACKED_POSITION packed_val, int &x, int &y, int &z)
-	{
-		const int packed_xy = *(const int*)(packed_val._val);
-		x = (packed_xy & 0x0000FFFF);
-		y = (packed_xy & 0xFFFF0000) >> 16;
-
-		const int packed_z = *(const int*)(packed_val._val + 2);
-		z = (packed_z & 0xFFFF0000) >> 16;
-	}
-
-	__device__ __host__ inline bool ishashVoxelDefined_g(PACKED_POSITION pos_tag)
-	{
-		int x, y, z;
-		xyz_from_pack_g(pos_tag, x, y, z);
-		return !(x == INVALID_POSTAG || y == INVALID_POSTAG || z == INVALID_POSTAG);
-	}
-
-	__device__ __host__ inline int NXYZ2I_g(int nx, int ny, int nz, int n, int n2)
-	{
-		return nz*n2 + ny*n + nx;
-	};
-
-	__device__ __host__ inline void Hash_g(int nx, int ny, int nz, int& mx, int& my, int& mz,
-		const unsigned char *offset_data, int m_bar, int r_bar, int r2)
-	{
-		int rx = nx%r_bar;
-		int ry = ny%r_bar;
-		int rz = nz%r_bar;
-
-		const unsigned char *offset = offset_data + NXYZ2I_g(rx, ry, rz, r_bar, r2) * 3;
-
-		mx = (nx + offset[0]) % m_bar;
-		my = (ny + offset[1]) % m_bar;
-		mz = (nz + offset[2]) % m_bar;
-	}
-
 	__global__ void conv_hash2col_gpu_kernel(
 		const float* hash_data,
 		const unsigned char *offset_data,
@@ -147,7 +108,7 @@ namespace caffe {
 	
 		CHECK_EQ(cudaDeviceSynchronize(), CUDA_SUCCESS);
 
-#if 1
+#if 0
 		static int test_a = 0;
 		if (test_a++ == 0)
 		{

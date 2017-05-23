@@ -44,6 +44,13 @@ namespace caffe {
 		  float *top_hash, const unsigned char *top_offset,
 		  const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar, 
 		  int *mask, int channels, int dense_res);
+	  void Forward_gpu_max(const vector<Blob<Dtype>*>& bottom,
+		  const vector<Blob<Dtype>*>& top);
+	  void forward_gpu_max(const float *bottom_hash, const unsigned char *bottom_offset,
+		  const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
+		  float *top_hash, const unsigned char *top_offset,
+		  const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar,
+		  int *mask, int channels, int dense_res);
   protected:
     virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
                              const vector<Blob<Dtype>*>& top);

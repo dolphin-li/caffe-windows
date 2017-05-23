@@ -634,6 +634,16 @@ void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vect
 	pool_conv_layer->SetUp(bottom, top);
 	//forward
 	pool_conv_layer->Forward(bottom, top);
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto gpu_top = create_blobs(top.size(), &top);
+	pool_conv_layer->Forward(bottom, gpu_top);
+	GPU_CPU_COMPARE(top, gpu_top);
+	Caffe::set_mode(Caffe::Brew::CPU);
+	release_blobs(gpu_top);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 void test_hash()

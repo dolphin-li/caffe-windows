@@ -434,19 +434,6 @@ void PoolHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 #ifdef CPU_ONLY
 STUB_GPU(PoolHashLayer);
 #endif
-template <typename Dtype>
-void PoolHashLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
-	const vector<Blob<Dtype>*>& top)
-{
-
-}
-
-template <typename Dtype>
-void PoolHashLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
-{
-
-}
 
 INSTANTIATE_CLASS(PoolHashLayer);
 
