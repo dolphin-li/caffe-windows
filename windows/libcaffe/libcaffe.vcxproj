@@ -420,8 +420,10 @@
     <CudaCompile Include="..\..\src\caffe\util\math_functions.cu" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="..\..\src\caffe\layers\base_conv_hash_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\bn_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\center_loss_layer.cu" />
+    <CudaCompile Include="..\..\src\caffe\layers\conv_hash_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\correlation_loss_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\cudnn_bn_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\flip_layer.cu" />

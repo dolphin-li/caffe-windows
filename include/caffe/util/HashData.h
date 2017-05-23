@@ -91,6 +91,7 @@ public:
 
 //int getDefinedVoxelNum(const float *hash_data, int m_bar, int channels);
 int getDefinedVoxelNum(const PACKED_POSITION *pos_tags, int m);
+void getValidPoses(const PACKED_POSITION *pos_tags, int* valid_poses, int m);
 //inline bool ishashVoxelDefined(const float *hash_voxel_ptr, int channels, int m)
 //{
 //	for (int c = 0; c < channels; c++)

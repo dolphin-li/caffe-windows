@@ -40,6 +40,19 @@ int getDefinedVoxelNum(const PACKED_POSITION *pos_tags, int m)
 	return defined_num;
 }
 
+void getValidPoses(const PACKED_POSITION *pos_tags, int* valid_poses, int m)
+{
+	const PACKED_POSITION *pos_tag_ptr = pos_tags;
+	for (int v = 0; v < m; v++)
+	{
+		if (ishashVoxelDefined(pos_tag_ptr))
+		{
+			*valid_poses++ = v;
+		}
+		pos_tag_ptr++;
+	}
+}
+
 bool loadHash(HashData &one_hash, FILE *fp)
 {
 	const int ori_channels = one_hash.m_channels;

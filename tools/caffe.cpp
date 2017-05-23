@@ -443,6 +443,45 @@ int time() {
 RegisterBrewFunction(time);
 
 /**************************For testing hash**************************/
+#define GPU_DEBUG
+const static float DATA_CHECK_EPS = 1e-6f;
+const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
+std::vector<Blob<float> *> create_blobs(int n, std::vector<Blob<float> *>* shapeLike = nullptr)
+{
+	std::vector<Blob<float> *> blobs;
+	blobs.resize(n);
+	for (int i = 0; i < n; i++)
+	{
+		blobs[i] = new Blob<float>();
+		if (shapeLike)
+			blobs[i]->ReshapeLike(*(*shapeLike)[i]);
+	}
+	return blobs;
+}
+void release_blobs(std::vector<Blob<float> *>& blobs)
+{
+	for (auto b : blobs)
+		if (b)
+			delete b;
+	blobs.clear();
+}
+#define GPU_CPU_COMPARE(top, gpu_top)\
+	for (size_t i_top = 0; i_top < top.size(); i_top++)\
+	{\
+		const float* top_data = top[i_top]->cpu_data();\
+		const float* gpu_top_data = gpu_top[i_top]->cpu_data();\
+		const int n = top[i_top]->count();\
+		for (int i = 0; i < n; i++)\
+		{\
+			if (abs(top_data[i] - gpu_top_data[i]) > (DATA_CHECK_EPS + abs(top_data[i]))*DATA_CHECK_EPS)\
+			{\
+				printf("error[%s][%d]: cpu/gpu(%d,%d) not matched %ef!=%ef\n",\
+					__FILE__, __LINE__, (int)i_top, i, top_data[i], gpu_top_data[i]);\
+				system("pause");\
+			}\
+		}\
+	}
+
 void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 {
 	std::vector<Blob<float> *> bottom; //no use
@@ -458,7 +497,7 @@ void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 	const int batch_size = 10;
 	hash_data_param->set_source("HashLayerList.txt");
 	hash_data_param->set_batch_size(batch_size);
-	hash_data_param->set_shuffle(true);
+	hash_data_param->set_shuffle(DATA_ENABLE_SHUFFLE);
 
 	caffe::LayerParameter hash_layer_param;
 	hash_layer_param.set_type("HashData");
@@ -471,6 +510,18 @@ void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 	hash_data_layer->SetUp(bottom, top);
 	//forward
 	hash_data_layer->Forward(bottom, top);
+
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto gpu_top = create_blobs(top.size(), &top);
+	hash_data_layer->SetUp(bottom, gpu_top);
+	hash_data_layer->Forward(bottom, gpu_top);
+	GPU_CPU_COMPARE(top, gpu_top);
+	Caffe::set_mode(Caffe::Brew::CPU);
+	release_blobs(gpu_top);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
@@ -504,6 +555,8 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	caffe::FillerParameter *b_filler = new caffe::FillerParameter;
 	b_filler->set_type("gaussian");
 	b_filler->set_std(1);
+	//b_filler->set_type("constant");
+	//b_filler->set_value(1);
 	conv_hash_param->set_allocated_bias_filler(b_filler);
 	
 
@@ -537,6 +590,20 @@ void test_hash_conv_layer_forward(const std::vector<Blob<float> *> &bottom, std:
 	blobs_2_batchHash(structed_top, top_batch);
 	top_batch.m_channels = num_output;
 	writeBatchHash_2_denseFiles(top_batch, dense_res, "top");
+
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto gpu_top = create_blobs(top.size(), &top);
+	hash_conv_layer->Forward(bottom, gpu_top);
+	structed_top[HASH_DATA_BLOB] = gpu_top[HASH_DATA_BLOB];
+	blobs_2_batchHash(structed_top, top_batch);
+	top_batch.m_channels = num_output;
+	writeBatchHash_2_denseFiles(top_batch, dense_res, "top_gpu");
+	Caffe::set_mode(Caffe::Brew::CPU);
+	release_blobs(gpu_top);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
@@ -580,6 +647,8 @@ void test_hash()
 	dwRet = GetCurrentDirectoryA(128, Buffer);
 	printf("Cur dir %s\n",Buffer);
 
+	// we start from the CPU path
+	Caffe::set_mode(Caffe::Brew::CPU);
 
 	/******************Data layer**************************/
 	std::vector<Blob<float> *> data_top;
@@ -598,6 +667,7 @@ void test_hash()
 	conv_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
 	conv_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	conv_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
+	conv_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
 
 	test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, kernel_size);
 	
@@ -613,12 +683,14 @@ void test_hash()
 	pool_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
 	pool_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	pool_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
+	pool_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
 	//pool top struct
 	pool_bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE] = data_top[OFFSET_BLOB + HASH_STRUCTURE_SIZE];	//pool bottom struct
 	pool_bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE] = data_top[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE] = data_top[M_BAR_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE] = data_top[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE] = data_top[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
 
 	test_pool_layer_forward(pool_bottom, pool_top, 2);
 	//do not handle memory, just for testing...

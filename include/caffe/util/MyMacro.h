@@ -16,7 +16,7 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define INVALID_POSTAG 9999
 
 
-#define HASH_STRUCTURE_SIZE 5	//offset, postag, m_bar, r_bar, def_num
+#define HASH_STRUCTURE_SIZE 6	//offset, postag, m_bar, r_bar, def_num, valid_pos
 #define HASH_DATA_SIZE 3	//layer output blob num: data, channel, dense_res
 //data blob idx 
 #define HASH_DATA_BLOB 0	
@@ -28,4 +28,5 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define M_BAR_BLOB 5
 #define R_BAR_BLOB 6
 #define DEFNUM_BLOB 7
+#define VALID_POS_BLOB 8
 #endif

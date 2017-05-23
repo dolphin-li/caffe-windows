@@ -486,31 +486,27 @@ void BaseConvHashLayer<Dtype>::backward_cpu_bias(Dtype* bias,
 #ifndef CPU_ONLY
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
-    const Dtype* weights, Dtype* output, bool skip_im2col) {
-	//TODO:
-  //const Dtype* col_buff = input;
-  //if (!is_1x1_) {
-  //  if (!skip_im2col) {
-  //    conv_im2col_gpu(input, col_buffer_.mutable_gpu_data());
-  //  }
-  //  col_buff = col_buffer_.gpu_data();
-  //}
-  //for (int g = 0; g < group_; ++g) {
-  //  caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-  //      group_, conv_out_spatial_dim_, kernel_dim_,
-  //      (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
-  //      (Dtype)0., output + output_offset_ * g);
-  //}
+void BaseConvHashLayer<Dtype>::forward_gpu_gemm(const float *bottom_hash, const unsigned char *bottom_offset,
+	const PACKED_POSITION *bottom_posTag, const int* bottom_validPos, int m_bar, int r_bar,
+	int bottom_channels, int top_channels, int defined_voxel_num, int dense_res, float *out_col_buf) 
+{
+	const int *kernel_shape = kernel_shape_.cpu_data();
+	const ConvHashParameter &conv_param = this->layer_param_.conv_hash_param();
+	conv_hash2col_gpu(bottom_hash, bottom_offset, bottom_posTag, bottom_validPos, 
+		kernel_shape, m_bar, r_bar, bottom_channels,
+		defined_voxel_num, dense_res, (float*)col_buffer_.mutable_gpu_data());
+	const int kernel_size = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
+	caffe_gpu_gemm<float>(CblasNoTrans, CblasNoTrans, top_channels, defined_voxel_num, bottom_channels*kernel_size,
+		1.f, (const float*)this->blobs_[0]->gpu_data(), (const float*)col_buffer_.gpu_data(),
+		0.f, out_col_buf);
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::forward_gpu_bias(Dtype* output,
-    const Dtype* bias) {
-	//TODO:
-  //caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num_output_,
-  //    out_spatial_dim_, 1, (Dtype)1., bias, bias_multiplier_.gpu_data(),
-  //    (Dtype)1., output);
+void BaseConvHashLayer<Dtype>::forward_gpu_bias(float* out_col_buf, const float* bias, int defined_voxel_num) 
+{
+	caffe_gpu_gemm<float>(CblasNoTrans, CblasNoTrans, num_output_,
+		defined_voxel_num, 1, 1.f, bias, (const float*)bias_multiplier_.gpu_data(),
+		1.f, out_col_buf);
 }
 
 template <typename Dtype>
@@ -697,6 +693,7 @@ int conv_hash2col_cpu(const float* hash_data, const unsigned char *offset_data, 
 	}
 
 	printf("col buffer size <%d, %d>\n", rows, counter);
+
 
 	return 1;
 }

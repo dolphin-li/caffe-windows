@@ -287,6 +287,7 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		Blob<Dtype>* mBar_blob = top_blobs[M_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* rBar_blob = top_blobs[R_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* defNum_blob = top_blobs[DEFNUM_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* validPos_blob = top_blobs[VALID_POS_BLOB + si * HASH_STRUCTURE_SIZE];
 
 		int batch_m = 0;
 		int batch_r = 0;
@@ -315,9 +316,15 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		const int posTag_size_f = (batch_m * sizeof(PACKED_POSITION)) / sizeof(Dtype) + 1;
 		std::vector<int> posTag_shape(1, posTag_size_f);
 		postag_blob->Reshape(posTag_shape);
+		//valid position tag, should convert to int, we store it the same size as posTag, 
+		// but its actual size should be defNum
+		const int validPos_size_f = (batch_m * sizeof(int)) / sizeof(Dtype) + 1;
+		std::vector<int> validPos_shape(1, validPos_size_f);
+		validPos_blob->Reshape(validPos_shape);
 
 		unsigned char *batch_offset_ptr = (unsigned char *)offset_blob->mutable_cpu_data();
 		PACKED_POSITION *batch_posTag_ptr = (PACKED_POSITION *)postag_blob->mutable_cpu_data();
+		int* batch_validPos_ptr = (int*)validPos_blob->mutable_cpu_data();
 		
 		for (int j = 0; j < (int)batch_perm.size(); j++)
 		{
@@ -329,8 +336,10 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 
 			memcpy(batch_offset_ptr, m_vpHierHashes[idx]->m_vpStructs[si]->m_offset_data, sizeof(unsigned char)*r * 3);
 			memcpy(batch_posTag_ptr, m_vpHierHashes[idx]->m_vpStructs[si]->m_position_tag, sizeof(PACKED_POSITION)*m);
+			getValidPoses(batch_posTag_ptr, batch_validPos_ptr, m);
 			batch_offset_ptr += r * 3;
 			batch_posTag_ptr += m;
+			batch_validPos_ptr += m;
 		}
 
 
@@ -606,7 +615,7 @@ template <typename Dtype>
 void HashDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
-
+	Forward_cpu(bottom, top);
 }
 
 INSTANTIATE_CLASS(HashDataLayer);

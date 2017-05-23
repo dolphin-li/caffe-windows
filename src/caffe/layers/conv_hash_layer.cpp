@@ -102,21 +102,6 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 STUB_GPU(ConvHashLayer);
 #endif
 
-template <typename Dtype>
-void ConvHashLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
-	const vector<Blob<Dtype>*>& top)
-{
-
-}
-
-template <typename Dtype>
-void ConvHashLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
-{
-
-}
-
-
 INSTANTIATE_CLASS(ConvHashLayer);
 
 }  // namespace caffe

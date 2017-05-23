@@ -42,9 +42,10 @@ class BaseConvHashLayer : public Layer<Dtype> {
   void backward_cpu_bias(Dtype* bias, const Dtype* input);
 
 #ifndef CPU_ONLY
-  void forward_gpu_gemm(const Dtype* col_input, const Dtype* weights,
-      Dtype* output, bool skip_im2col = false);
-  void forward_gpu_bias(Dtype* output, const Dtype* bias);
+  void forward_gpu_gemm(const float *bottom_hash, const unsigned char *bottom_offset,
+	  const PACKED_POSITION *bottom_posTag, const int* valid_positions, int m_bar, int r_bar,
+	  int bottom_channels, int top_channels, int defined_voxel_num, int dense_res, float *out_col_buf);
+  void forward_gpu_bias(float* out_col_buf, const float* bias, int defined_voxel_num);
   void backward_gpu_gemm(const Dtype* input, const Dtype* weights,
       Dtype* col_output);
   void weight_gpu_gemm(const Dtype* col_input, const Dtype* output, Dtype*
@@ -106,6 +107,14 @@ int conv_hash2col_cpu(const float* hash_data, const unsigned char *offset_data, 
 	int dense_res, float* col_buff);
 
 int conv_col2hash_cpu(const PACKED_POSITION *pos_tags, float *out_hash_data,
+	int m_bar, int out_channels, int defined_num, const float* col_buff);
+
+int conv_hash2col_gpu(const float* hash_data, const unsigned char *offset_data, const PACKED_POSITION *position_tags,
+	const int* valid_positions, const int kernel_shape[3],	//D, H, W
+	int m_bar, int r_bar, int channels, int defined_num,
+	int dense_res, float* col_buff);
+
+int conv_col2hash_gpu(const PACKED_POSITION *pos_tags, const int* valid_positions, float *out_hash_data,
 	int m_bar, int out_channels, int defined_num, const float* col_buff);
 
 }  // namespace caffe
