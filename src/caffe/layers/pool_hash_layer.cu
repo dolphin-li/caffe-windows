@@ -83,6 +83,38 @@ namespace caffe {
 		} // end for caffe_kernel_loop
 	}
 
+	__global__ void backward_gpu_max_kernel(float *bottom_dif, int bottom_m_bar,
+		const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
+		const int *mask, int channels)
+	{
+		const int top_m = top_m_bar * top_m_bar * top_m_bar;
+		const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+		CUDA_KERNEL_LOOP(v, top_m)
+		{
+			//if the hash voxel is undefined, skip
+			if (!ishashVoxelDefined_g(top_posTag[v]))
+			{
+				continue;
+			}
+			///////////////////////////////////////////
+
+			const float *tp_dif_ptr = top_dif + v;
+			const int *mask_ptr = mask + v;
+			float *bt_dif_start = bottom_dif;
+			//init to min
+			for (int c = 0; c < channels; c++)
+			{
+				const int bt_m_idx = *mask_ptr;
+
+				bt_dif_start[bt_m_idx] += *tp_dif_ptr;
+
+				tp_dif_ptr += top_m;
+				mask_ptr += top_m;
+				bt_dif_start += bottom_m;
+			}
+		}
+	}
+
 	template<class Dtype>
 	void PoolHashLayer<Dtype>::forward_gpu_max(const float *bottom_hash, const unsigned char *bottom_offset,
 		const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
@@ -110,12 +142,6 @@ namespace caffe {
 			mask, channels, bt_dense_res, make_int3(stride_x, stride_y, stride_z)
 			);	
 	}
-
-	template void PoolHashLayer<float>::forward_gpu_max(const float *bottom_hash, const unsigned char *bottom_offset,
-		const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
-		float *top_hash, const unsigned char *top_offset,
-		const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar,
-		int *mask, int channels, int dense_res);
 
 	template <typename Dtype>
 	void PoolHashLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
@@ -198,7 +224,85 @@ namespace caffe {
 	void PoolHashLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 		const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 	{
+		switch (this->layer_param_.pooling_param().pool()) {
+		case PoolingParameter_PoolMethod_MAX:
+			Backward_gpu_max(top, propagate_down, bottom);
+			break;
+		case PoolingParameter_PoolMethod_AVE:
+			NOT_IMPLEMENTED;
+			break;
+		case PoolingParameter_PoolMethod_STOCHASTIC:
+			NOT_IMPLEMENTED;
+			break;
+		default:
+			LOG(FATAL) << "Unknown pooling method.";
+		}
+	}
 
+	template <typename Dtype>
+	void PoolHashLayer<Dtype>::Backward_gpu_max(const vector<Blob<Dtype>*>& top,
+		const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
+	{
+		float *bt_hash_dif = (float*)bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
+		const unsigned char*bt_offset = (const unsigned char *)bottom[OFFSET_BLOB]->gpu_data();
+		const PACKED_POSITION *bt_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->gpu_data();
+
+		const float *tp_hash_dif = (const float*)top[HASH_DATA_BLOB]->gpu_diff();
+		const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+
+		const int *mask = max_idx_.gpu_data();
+
+		int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+		const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+		const int tp_dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
+
+		for (int i = 0; i < batch_num; ++i)
+		{
+			float* cur_bt_dif = bt_hash_dif;
+			const int bt_m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+			const int bt_r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+
+
+			const float *cur_tp_dif = tp_hash_dif;
+			const int *cur_mask = mask;
+			const PACKED_POSITION *cur_tp_postag = tp_posTag;
+			const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
+			const int tp_r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
+
+			backward_gpu_max(cur_bt_dif, bt_m_bar,
+				cur_tp_dif, cur_tp_postag, tp_m_bar,
+				cur_mask, channels_);
+
+			//to next hash
+			const int bt_m = bt_m_bar * bt_m_bar * bt_m_bar;
+			const int bt_r = bt_r_bar * bt_r_bar * bt_r_bar;
+			bt_hash_dif += bt_m * channels_;
+			bt_offset += bt_r * 3;
+			bt_posTag += bt_m;
+
+			const int tp_m = tp_m_bar * tp_m_bar * tp_m_bar;
+			const int tp_r = tp_r_bar * tp_r_bar * tp_r_bar;
+			tp_hash_dif += tp_m * channels_;
+			mask += tp_m * channels_;
+			tp_offset += tp_r * 3;
+			tp_posTag += tp_m;
+		}
+	}
+
+	template <typename Dtype>
+	void PoolHashLayer<Dtype>::backward_gpu_max(float *bottom_dif, int bottom_m_bar,
+		const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
+		const int *mask, int channels)
+	{
+		const int top_m = top_m_bar * top_m_bar * top_m_bar;
+		const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+		
+		//init dif to zero
+		caffe_gpu_set(bottom_m*channels, (float)0, bottom_dif);
+		backward_gpu_max_kernel << <CAFFE_GET_BLOCKS(top_m), CAFFE_CUDA_NUM_THREADS >> > (
+			bottom_dif, bottom_m_bar, top_dif, top_posTag, top_m_bar, mask, channels
+			);
 	}
 
 	INSTANTIATE_LAYER_GPU_FUNCS(PoolHashLayer);

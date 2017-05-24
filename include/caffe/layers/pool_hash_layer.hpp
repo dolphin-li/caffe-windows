@@ -56,6 +56,11 @@ namespace caffe {
 	  void backward_cpu_max(float *bottom_dif, int bottom_m_bar,
 		  const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar, 
 		  const int *mask, int channels);
+	  void Backward_gpu_max(const vector<Blob<Dtype>*>& top,
+		  const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
+	  void backward_gpu_max(float *bottom_dif, int bottom_m_bar,
+		  const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
+		  const int *mask, int channels);
   protected:
     virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
                              const vector<Blob<Dtype>*>& top);
