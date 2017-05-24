@@ -137,6 +137,11 @@ void reshape_batchHash(BatchHashData &batch_hash,int channels);
 void hash_2_dense(const float *hash_data, const PACKED_POSITION *position_tags, const unsigned char *m_offset_data,
 	int m_bar, int r_bar, int channels,
 	float *dense_data, int res);
+void topMask_2_dense(const int *top_mask, const PACKED_POSITION *top_posTags, const unsigned char *top_offset,
+	int top_m_bar, int top_r_bar, int channels, int top_res,
+	const PACKED_POSITION *bottom_posTags, int bottom_res,
+	int *dense_idx);
+
 
 _inline int NXYZ2I(int nx, int ny, int nz, int n, int n2)
 {
@@ -157,7 +162,7 @@ _inline void Hash(int nx, int ny, int nz, int& mx, int& my, int& mz,
 	mz = (nz + offset[2]) % m_bar;
 }
 
-void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashData &batch_hash);
+void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashData &batch_hash, int dif_flag = 0);
 
 
 #ifdef __CUDACC__
@@ -244,7 +249,7 @@ int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, cons
 int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix);
 
 int writeDense_2_Grid(const float *dense_data, int res, int channels, const char *filename);
-
+int writeDense_2_Grid(const int *dense_data, int res, int channels, const char *filename);
 /************************************UTILS********************************/
 void calc_sum(const float *hash, const unsigned char *offset,
 	const PACKED_POSITION *posTag, int m_bar, int r_bar,

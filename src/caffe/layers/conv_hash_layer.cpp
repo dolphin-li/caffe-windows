@@ -145,6 +145,11 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 
 	  top_hash_dif += m * num_output_;
   }
+
+#if 1//for debug
+  writeDenseKernelDif_2_HF5("kernel_dif.hf5");
+  writeBiasDif_2_HF5("bias_dif.hf5");
+#endif
 }
 
 #ifdef CPU_ONLY

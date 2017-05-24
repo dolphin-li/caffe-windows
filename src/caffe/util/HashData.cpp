@@ -341,6 +341,43 @@ void hash_2_dense(const float *hash_data, const PACKED_POSITION *position_tags, 
 
 
 
+void topMask_2_dense(const int *top_mask, const PACKED_POSITION *top_posTags, const unsigned char *top_offset,
+	int top_m_bar, int top_r_bar, int channels, int top_res,
+	const PACKED_POSITION *bottom_posTags, int bottom_res,
+	int *dense_idx)
+{
+	int top_res3 = top_res*top_res*top_res;
+	memset(dense_idx, -1, sizeof(int)*top_res3 * channels);
+
+	int top_m = top_m_bar * top_m_bar * top_m_bar;
+	const int *mask_ptr = top_mask;
+	for (int i = 0; i < top_m; i++)
+	{
+		if (!ishashVoxelDefined(&top_posTags[i]))
+		{
+			mask_ptr++;
+			continue;
+		}
+		int x, y, z;
+		xyz_from_pack(top_posTags[i], x, y, z);
+		int ni = NXYZ2I(x, y, z, top_res, top_res*top_res);
+		int *cur_dense_ptr = dense_idx + ni;
+		const int *cur_mask_ptr = mask_ptr;
+		for (int c = 0; c < channels; c++)
+		{
+			int bt_hash_idx = *cur_mask_ptr;
+			int bx, by, bz;
+			xyz_from_pack(bottom_posTags[bt_hash_idx], bx, by, bz);
+			*cur_dense_ptr = NXYZ2I(bx, by, bz, bottom_res, bottom_res*bottom_res);
+			
+			cur_dense_ptr += top_res3;
+			cur_mask_ptr += top_m;
+		}
+		mask_ptr++;
+	}
+}
+
+
 
 bool loadHashes(std::vector<HashData> &hashes, const char *filename)
 {
@@ -422,7 +459,7 @@ void destroyBatchHash(BatchHashData &batch_hash)
 }
 
 //NOTE: in caffe, the memory of batchhash is managed by blobs
-void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashData &batch_hash)
+void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashData &batch_hash, int dif_flag)
 {
 	int batch_num = blobs[M_BAR_BLOB]->shape(0);
 	if (!batch_num)
@@ -430,8 +467,15 @@ void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashD
 		return;
 	}
 	initBatchHash(batch_hash);
-
-	batch_hash.m_hash_data = blobs[HASH_DATA_BLOB]->mutable_cpu_data();
+	if (!dif_flag)
+	{
+		batch_hash.m_hash_data = blobs[HASH_DATA_BLOB]->mutable_cpu_data();
+	}
+	else
+	{
+		batch_hash.m_hash_data = blobs[HASH_DATA_BLOB]->mutable_cpu_diff();
+	}
+	
 	batch_hash.m_position_tag = (PACKED_POSITION*)blobs[POSTAG_BLOB]->mutable_cpu_data();
 	batch_hash.m_offset_data = (unsigned char *)blobs[OFFSET_BLOB]->mutable_cpu_data();	
 
@@ -736,6 +780,41 @@ int writeDense_2_Grid(const float *dense_data, int res, int channels, const char
 		data_ptr++;
 	}
 	
+	fclose(fp);
+	return 1;
+}
+
+
+
+int writeDense_2_Grid(const int *dense_data, int res, int channels, const char *filename)
+{
+	FILE *fp = fopen(filename, "wb");
+	if (!fp)
+	{
+		printf("Error: failed to load dense from %s\n", filename);
+		return 0;
+	}
+	fwrite(&channels, sizeof(int), 1, fp);
+	fwrite(&res, sizeof(int), 1, fp);
+	fwrite(&res, sizeof(int), 1, fp);
+	fwrite(&res, sizeof(int), 1, fp);
+
+	//fwrite(dense_data, sizeof(float), channels*res*res*res, fp);
+	//NOTE: the grid memory order is D H W C
+	int tn = res*res*res;
+	const int *data_ptr = dense_data;
+	for (int i = 0; i < tn; i++)
+	{
+		const int *cur_ptr = data_ptr;
+		for (int c = 0; c < channels; c++)
+		{
+			fwrite(cur_ptr, sizeof(float), 1, fp);
+			cur_ptr += tn;
+		}
+
+		data_ptr++;
+	}
+
 	fclose(fp);
 	return 1;
 }

@@ -444,7 +444,7 @@ int time() {
 RegisterBrewFunction(time);
 
 /**************************For testing hash**************************/
-#define GPU_DEBUG
+//#define GPU_DEBUG
 const static float DATA_CHECK_EPS = 1e-6f;
 const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
 std::vector<Blob<float> *> create_blobs(int n, std::vector<Blob<float> *>* shapeLike = nullptr)
@@ -619,6 +619,7 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 
 	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
 	const int top_channels = (int)top[CHANNEL_BLOB]->cpu_data()[0];
+	const int dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
 	const float invRand = 1.f / (float)RAND_MAX;
 	for (int i = 0; i < batch_num; ++i)
 	{
@@ -661,9 +662,29 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 	}
 	std::vector<bool> bp_flag; //no use
 	pConvLayer->Backward(top, bp_flag,bottom);
+
+	//save to HDF5 for debug
+	BatchHashData bottom_dif_batch;
+	blobs_2_batchHash(bottom, bottom_dif_batch,1);
+	bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "bottom_dif");
+
+	std::vector<Blob<float> *> structed_top_dif(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
+	structed_top_dif[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top_dif[CHANNEL_BLOB] = top[CHANNEL_BLOB];
+	structed_top_dif[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
+	structed_top_dif[OFFSET_BLOB] = bottom[OFFSET_BLOB];
+	structed_top_dif[POSTAG_BLOB] = bottom[POSTAG_BLOB];
+	structed_top_dif[M_BAR_BLOB] = bottom[M_BAR_BLOB];
+	structed_top_dif[R_BAR_BLOB] = bottom[R_BAR_BLOB];
+	structed_top_dif[DEFNUM_BLOB] = bottom[DEFNUM_BLOB];
+	BatchHashData top_dif_batch;
+	blobs_2_batchHash(structed_top_dif, top_dif_batch,1);
+	top_dif_batch.m_channels = top_channels;
+	writeBatchHash_2_denseFiles(top_dif_batch, dense_res, "top_dif");
 }
 
-void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
+caffe::PoolHashLayer<float> *test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
 	int stride)
 {
 	const int top_blob_num = HASH_DATA_SIZE;
@@ -686,21 +707,79 @@ void test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vect
 	pool_hash_layer_param.set_type("PoolvHash");
 	pool_hash_layer_param.set_allocated_pool_hash_param(pool_hash_param);
 
-	shared_ptr<Layer<float> > pool_conv_layer(new caffe::PoolHashLayer<float>(pool_hash_layer_param));
+	caffe::PoolHashLayer<float> *pool_hash_layer = new caffe::PoolHashLayer<float>(pool_hash_layer_param);
 	//setup 
-	pool_conv_layer->SetUp(bottom, top);
+	pool_hash_layer->SetUp(bottom, top);
 	//forward
-	pool_conv_layer->Forward(bottom, top);
+	pool_hash_layer->Forward(bottom, top);
 #ifdef GPU_DEBUG
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
-	pool_conv_layer->Forward(bottom, gpu_top);
+	pool_hash_layer->Forward(bottom, gpu_top);
 	GPU_CPU_COMPARE(top, gpu_top);
 	Caffe::set_mode(Caffe::Brew::CPU);
 	release_blobs(gpu_top);
 	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
 #endif
+
+	return pool_hash_layer;
+}
+
+
+void test_pool_layer_backward(caffe::PoolHashLayer<float> *pPoolLayer, const std::vector<Blob<float> *> &bottom,
+	const std::vector<Blob<float> *> &top)
+{
+	//random init top dif
+	float *top_hash_dif = (float*)top[HASH_DATA_BLOB]->mutable_cpu_diff();
+	const unsigned char* offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB+HASH_STRUCTURE_SIZE]->cpu_data();
+	const PACKED_POSITION *posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
+
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int top_channels = (int)top[CHANNEL_BLOB]->cpu_data()[0];
+	const int dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
+	const float invRand = 1.f / (float)RAND_MAX;
+	for (int i = 0; i < batch_num; ++i)
+	{
+		float *top_dif = top_hash_dif;
+
+		const unsigned char* offset_data = offset_ptr;
+		const PACKED_POSITION *pos_tags = posTag_ptr;
+		const int m_bar = (int)bottom[M_BAR_BLOB+HASH_STRUCTURE_SIZE]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
+		const int defNum = (int)bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		//init to zero
+		memset(top_dif, 0, sizeof(float)*m*top_channels);
+		//fill top dif randomly
+		float *top_dif_ptr = top_dif;
+		for (int v = 0; v < m; v++)
+		{
+			//if the hash voxel is undefined, skip
+			if (!ishashVoxelDefined(&pos_tags[v]))
+			{
+				top_dif_ptr++;
+				continue;
+			}
+			float *cur_dif_ptr = top_dif_ptr;
+			for (int c = 0; c < top_channels; c++)
+			{
+				*cur_dif_ptr = (float)rand() * invRand;
+				cur_dif_ptr += m;
+			}
+			top_dif_ptr++;
+		}
+
+
+		//to next hash
+		offset_ptr += r * 3;
+		posTag_ptr += m;
+		top_hash_dif += m * top_channels;
+	}
+	std::vector<bool> bp_flag; //no use
+	pPoolLayer->Backward(top, bp_flag, bottom);
 }
 
 void test_bn_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
@@ -809,7 +888,8 @@ void test_hash()
 	pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE] = data_top[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
 
-	test_pool_layer_forward(pool_bottom, pool_top, 2);
+	caffe::PoolHashLayer<float> *pPoolLayer = test_pool_layer_forward(pool_bottom, pool_top, 2);
+	test_pool_layer_backward(pPoolLayer, pool_bottom, pool_top);
 
 	/****************BN layer*****************************/
 	std::vector<Blob<float> *> bn_top;

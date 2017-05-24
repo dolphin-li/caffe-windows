@@ -337,98 +337,152 @@ void PoolHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	}
 }
 
+
+
+template <typename Dtype>
+void PoolHashLayer<Dtype>::backward_cpu_max(float *bottom_dif, int bottom_m_bar,
+	const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
+	const int *mask, int channels)
+{
+	const int top_m = top_m_bar * top_m_bar * top_m_bar;
+	const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+	//init dif to zero
+	caffe_set(bottom_m*channels, (float)0, bottom_dif);
+	for (int v = 0; v < top_m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&top_posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		const float *tp_dif_ptr = &top_dif[v];
+		const int *mask_ptr = &mask[v];
+		float *bt_dif_start = bottom_dif;
+		//init to min
+		for (int c = 0; c < channels; c++)
+		{
+			const int bt_m_idx = *mask_ptr;
+			
+			bt_dif_start[bt_m_idx] += *tp_dif_ptr;
+
+			tp_dif_ptr += top_m;
+			mask_ptr += top_m;
+			bt_dif_start += bottom_m;
+		}
+	}
+}
+
+template <typename Dtype>
+void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
+	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) 
+{
+	float *bt_hash_dif = (float*)bottom[HASH_DATA_BLOB]->mutable_cpu_diff();
+	const unsigned char*bt_offset = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *bt_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+
+	const float *tp_hash_dif = (const float*)top[HASH_DATA_BLOB]->cpu_diff();
+	const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
+	const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
+
+	int *mask = max_idx_.mutable_cpu_data();
+
+	int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	const int tp_dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
+
+	for (int i = 0; i < batch_num; ++i)
+	{
+		float* cur_bt_dif = bt_hash_dif;
+		const unsigned char* cur_bt_offset = bt_offset;
+		const PACKED_POSITION *cur_bt_postag = bt_posTag;
+		const int bt_m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int bt_r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+
+
+		const float *cur_tp_dif = tp_hash_dif;
+		int *cur_mask = mask;
+		const unsigned char*cur_tp_offset = tp_offset;
+		const PACKED_POSITION *cur_tp_postag = tp_posTag;
+		const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
+		const int tp_r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
+
+		backward_cpu_max(cur_bt_dif, bt_m_bar, 
+			cur_tp_dif, cur_tp_postag, tp_m_bar, 
+			cur_mask, channels_);
+
+#if 1	//for debug
+		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
+		hash_2_dense(cur_bt_dif, cur_bt_postag, cur_bt_offset, bt_m_bar,
+			bt_r_bar, channels_, bt_dense_buf, bt_dense_res);
+		char buf[128];
+		sprintf(buf, "bottom_dif_%d.grid", i);
+		writeDense_2_Grid(bt_dense_buf, bt_dense_res, channels_, buf);
+		
+
+		float *tp_dense_buf = new float[tp_dense_res * tp_dense_res * tp_dense_res * channels_];
+		hash_2_dense(cur_tp_dif, cur_tp_postag, cur_tp_offset, tp_m_bar,
+			tp_r_bar, channels_, tp_dense_buf, tp_dense_res);
+		int *tp_idx_buf = new int[tp_dense_res * tp_dense_res * tp_dense_res * channels_];
+		topMask_2_dense(cur_mask, cur_tp_postag, cur_tp_offset,
+			tp_m_bar, tp_r_bar, channels_, tp_dense_res, cur_bt_postag, bt_dense_res, tp_idx_buf);
+		
+
+		float *bt_dense_debug = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
+		bp_max_dense(tp_dense_buf, tp_idx_buf, bt_dense_debug, tp_dense_res, bt_dense_res, channels_);
+
+		//for (int tt=0;tt<bt_dense_res * bt_dense_res * bt_dense_res * channels_;tt++)
+		//{
+		//	if (bt_dense_debug[tt]!=bt_dense_buf[tt])
+		//	{
+		//		printf("Error!\n");
+		//	}
+		//}
+
+		sprintf(buf, "bottom_dif_dense_%d.grid", i);
+		writeDense_2_Grid(bt_dense_debug, bt_dense_res, channels_, buf);
+
+		delete[]tp_dense_buf;
+		delete[]bt_dense_buf;
+		delete[]tp_idx_buf;
+		delete[]bt_dense_debug;
+
+#endif
+
+		//to next hash
+		const int bt_m = bt_m_bar * bt_m_bar * bt_m_bar;
+		const int bt_r = bt_r_bar * bt_r_bar * bt_r_bar;
+		bt_hash_dif += bt_m * channels_;
+		bt_offset += bt_r * 3;
+		bt_posTag += bt_m;
+
+		const int tp_m = tp_m_bar * tp_m_bar * tp_m_bar;
+		const int tp_r = tp_r_bar * tp_r_bar * tp_r_bar;
+		tp_hash_dif += tp_m * channels_;
+		mask += tp_m * channels_;
+		tp_offset += tp_r * 3;
+		tp_posTag += tp_m;
+	}
+}
+
 template <typename Dtype>
 void PoolHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
-	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-	//if (!propagate_down[0]) {
-	//	return;
-	//}
-	//CHECK_EQ(bottom[0]->num_axes(), 4);
-	//const int channels = in_channel_shape_.cpu_data()[0];
-	//const int height = in_channel_shape_.cpu_data()[1];
-	//const int width = in_channel_shape_.cpu_data()[2];
-	//const int kernel_h = kernel_shape_.cpu_data()[0];
-	//const int kernel_w = kernel_shape_.cpu_data()[1];
-	//const int pad_h = pad_shape_.cpu_data()[0];
-	//const int pad_w = pad_shape_.cpu_data()[1];
-	//const int stride_h = stride_shape_.cpu_data()[0];
-	//const int stride_w = stride_shape_.cpu_data()[1];
-	//const int pooled_height = out_shape_.cpu_data()[0];
-	//const int pooled_width = out_shape_.cpu_data()[1];
-	//const Dtype* top_diff = top[0]->cpu_diff();
-	//Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-	//// Different pooling methods. We explicitly do the switch outside the for
-	//// loop to save time, although this results in more codes.
-	//caffe_set(bottom[0]->count(), Dtype(0), bottom_diff);
-	//// We'll output the mask to top[1] if it's of size >1.
-	//const bool use_top_mask = top.size() > 1;
-	//const int* mask = NULL;  // suppress warnings about uninitialized variables
-	//const Dtype* top_mask = NULL;
-	//switch (this->layer_param_.pooling_param().pool()) {
-	//case PoolingParameter_PoolMethod_MAX:
-	//	// The main loop
-	//	if (use_top_mask) {
-	//		top_mask = top[1]->cpu_data();
-	//	}
-	//	else {
-	//		mask = max_idx_.cpu_data();
-	//	}
-	//	for (int n = 0; n < top[0]->shape(0); ++n) {
-	//		for (int c = 0; c < channels; ++c) {
-	//			for (int ph = 0; ph < pooled_height; ++ph) {
-	//				for (int pw = 0; pw < pooled_width; ++pw) {
-	//					const int index = ph * pooled_width + pw;
-	//					const int bottom_index =
-	//						use_top_mask ? top_mask[index] : mask[index];
-	//					bottom_diff[bottom_index] += top_diff[index];
-	//				}
-	//			}
-	//			bottom_diff += bottom[0]->offset(0, 1);
-	//			top_diff += top[0]->offset(0, 1);
-	//			if (use_top_mask) {
-	//				top_mask += top[0]->offset(0, 1);
-	//			}
-	//			else {
-	//				mask += top[0]->offset(0, 1);
-	//			}
-	//		}
-	//	}
-	//	break;
-	//case PoolingParameter_PoolMethod_AVE:
-	//	// The main loop
-	//	for (int n = 0; n < top[0]->shape(0); ++n) {
-	//		for (int c = 0; c < channels; ++c) {
-	//			for (int ph = 0; ph < pooled_height; ++ph) {
-	//				for (int pw = 0; pw < pooled_width; ++pw) {
-	//					int hstart = ph * stride_h - pad_h;
-	//					int wstart = pw * stride_w - pad_w;
-	//					int hend = min(hstart + kernel_h, height + pad_h);
-	//					int wend = min(wstart + kernel_w, width + pad_w);
-	//					int pool_size = (hend - hstart) * (wend - wstart);
-	//					hstart = max(hstart, 0);
-	//					wstart = max(wstart, 0);
-	//					hend = min(hend, height);
-	//					wend = min(wend, width);
-	//					for (int h = hstart; h < hend; ++h) {
-	//						for (int w = wstart; w < wend; ++w) {
-	//							bottom_diff[h * width + w] +=
-	//								top_diff[ph * pooled_width + pw] / pool_size;
-	//						}
-	//					}
-	//				}
-	//			}
-	//			// offset
-	//			bottom_diff += bottom[0]->offset(0, 1);
-	//			top_diff += top[0]->offset(0, 1);
-	//		}
-	//	}
-	//	break;
-	//case PoolingParameter_PoolMethod_STOCHASTIC:
-	//	NOT_IMPLEMENTED;
-	//	break;
-	//default:
-	//	LOG(FATAL) << "Unknown pooling method.";
-	//}
+	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) 
+{
+	switch (this->layer_param_.pooling_param().pool()) {
+	case PoolingParameter_PoolMethod_MAX:
+		Backward_cpu_max(top, propagate_down,bottom);
+		break;
+	case PoolingParameter_PoolMethod_AVE:
+		NOT_IMPLEMENTED;
+		break;
+	case PoolingParameter_PoolMethod_STOCHASTIC:
+		NOT_IMPLEMENTED;
+		break;
+	default:
+		LOG(FATAL) << "Unknown pooling method.";
+	}
 }
 
 #ifdef CPU_ONLY
@@ -438,3 +492,27 @@ STUB_GPU(PoolHashLayer);
 INSTANTIATE_CLASS(PoolHashLayer);
 
 }  // namespace caffe
+
+
+void bp_max_dense(const float *top_dif, const int *top_mask, float *bottom_dif, int top_res, int bottom_res, int channels)
+{
+	int top_n = top_res * top_res * top_res;
+	int bottom_n = bottom_res * bottom_res * bottom_res;
+	memset(bottom_dif,0,sizeof(float)*channels*bottom_n);
+
+	for (int c=0;c<channels;c++)
+	{
+		const float *cur_top_dif = top_dif + top_n*c;
+		float *cur_bottom_dif = bottom_dif + bottom_n*c;
+		const int *cur_mask = top_mask + top_n*c;
+		for (int ti=0;ti<top_n;ti++)
+		{
+			int bi = cur_mask[ti];
+			if (bi<0)
+			{
+				continue;
+			}
+			cur_bottom_dif[bi] += cur_top_dif[ti];
+		}
+	}
+}
