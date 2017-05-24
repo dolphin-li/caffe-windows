@@ -444,7 +444,7 @@ int time() {
 RegisterBrewFunction(time);
 
 /**************************For testing hash**************************/
-//#define GPU_DEBUG
+#define GPU_DEBUG
 const static float DATA_CHECK_EPS = 1e-6f;
 const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
 std::vector<Blob<float> *> create_blobs(int n, std::vector<Blob<float> *>* shapeLike = nullptr)
@@ -782,7 +782,7 @@ void test_pool_layer_backward(caffe::PoolHashLayer<float> *pPoolLayer, const std
 	pPoolLayer->Backward(top, bp_flag, bottom);
 }
 
-void test_bn_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
+caffe::BNHashLayer<float> *test_bn_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
 {
 	const int top_blob_num = HASH_DATA_SIZE;
 	top.resize(top_blob_num);	//only data updated, structure is already given
@@ -801,20 +801,21 @@ void test_bn_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector
 
 	printf("bn eps: %ef\n", bn_hash_param->eps());
 
-	shared_ptr<Layer<float> > bn_conv_layer(new caffe::BNHashLayer<float>(bn_hash_layer_param));
-	//bn_conv_layer->SetUp(bottom, top);
-	//bn_conv_layer->Forward(bottom, top);
-#ifdef GPU_DEBUG
-	// forward gpu
-	Caffe::set_mode(Caffe::Brew::GPU);
-	auto gpu_top = create_blobs(top.size(), &top);
-	bn_conv_layer->SetUp(bottom, gpu_top);
-	bn_conv_layer->Forward(bottom, gpu_top);
+	caffe::BNHashLayer<float> *bn_hash_layer = new caffe::BNHashLayer<float>(bn_hash_layer_param);
+	bn_hash_layer->SetUp(bottom, top);
+	bn_hash_layer->Forward(bottom, top);
+
+	//save to HDF5 for debug
+	const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	BatchHashData bottom_batch;
+	blobs_2_batchHash(bottom, bottom_batch);
+	bottom_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "bottom_bn");
 
 	std::vector<Blob<float> *> structed_top(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
-	structed_top[HASH_DATA_BLOB] = gpu_top[HASH_DATA_BLOB];
-	structed_top[CHANNEL_BLOB] = gpu_top[CHANNEL_BLOB];
-	structed_top[DENSE_RES_BLOB] = gpu_top[DENSE_RES_BLOB];
+	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top[CHANNEL_BLOB] = top[CHANNEL_BLOB];
+	structed_top[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
 	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB];
 	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB];
 	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB];
@@ -823,13 +824,49 @@ void test_bn_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector
 	BatchHashData top_batch;
 	blobs_2_batchHash(structed_top, top_batch);
 	top_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
-	const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(top_batch, dense_res, "top_bn");
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto gpu_top = create_blobs(top.size(), &top);
+	bn_hash_layer->SetUp(bottom, gpu_top);
+	bn_hash_layer->Forward(bottom, gpu_top);
+
+	//std::vector<Blob<float> *> structed_top(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
+	//structed_top[HASH_DATA_BLOB] = gpu_top[HASH_DATA_BLOB];
+	//structed_top[CHANNEL_BLOB] = gpu_top[CHANNEL_BLOB];
+	//structed_top[DENSE_RES_BLOB] = gpu_top[DENSE_RES_BLOB];
+	//structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB];
+	//structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB];
+	//structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB];
+	//structed_top[R_BAR_BLOB] = bottom[R_BAR_BLOB];
+	//structed_top[DEFNUM_BLOB] = bottom[DEFNUM_BLOB];
+	//BatchHashData top_batch;
+	//blobs_2_batchHash(structed_top, top_batch);
+	//top_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	//const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	//writeBatchHash_2_denseFiles(top_batch, dense_res, "top_bn_gpu");
+	//save to HDF5 for debug
+
+	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top[CHANNEL_BLOB] = top[CHANNEL_BLOB];
+	structed_top[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
+	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB];
+	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB];
+	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB];
+	structed_top[R_BAR_BLOB] = bottom[R_BAR_BLOB];
+	structed_top[DEFNUM_BLOB] = bottom[DEFNUM_BLOB];
+
+	blobs_2_batchHash(structed_top, top_batch);
+	top_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
 	writeBatchHash_2_denseFiles(top_batch, dense_res, "top_bn_gpu");
 
 	Caffe::set_mode(Caffe::Brew::CPU);
 	release_blobs(gpu_top);
 	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
 #endif
+
+	return bn_hash_layer;
 }
 
 void test_hash()
@@ -894,18 +931,26 @@ void test_hash()
 	/****************BN layer*****************************/
 	std::vector<Blob<float> *> bn_top;
 	std::vector<Blob<float>*> bn_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
-	bn_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
-	bn_bottom[CHANNEL_BLOB] = data_top[CHANNEL_BLOB];
-	bn_bottom[DENSE_RES_BLOB] = data_top[DENSE_RES_BLOB];
-	bn_bottom[OFFSET_BLOB] = data_top[OFFSET_BLOB];	//pool bottom struct
-	bn_bottom[POSTAG_BLOB] = data_top[POSTAG_BLOB];
-	bn_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
-	bn_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
-	bn_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
-	bn_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
+	bn_bottom[HASH_DATA_BLOB] = pool_top[HASH_DATA_BLOB];
+	bn_bottom[CHANNEL_BLOB] = pool_top[CHANNEL_BLOB];
+	bn_bottom[DENSE_RES_BLOB] = pool_top[DENSE_RES_BLOB];
+	bn_bottom[OFFSET_BLOB] = pool_bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[POSTAG_BLOB] = pool_bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[M_BAR_BLOB] = pool_bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[R_BAR_BLOB] = pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[DEFNUM_BLOB] = pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[VALID_POS_BLOB] = pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
+	//bn_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
+	//bn_bottom[CHANNEL_BLOB] = data_top[CHANNEL_BLOB];
+	//bn_bottom[DENSE_RES_BLOB] = data_top[DENSE_RES_BLOB];
+	//bn_bottom[OFFSET_BLOB] = data_top[OFFSET_BLOB];
+	//bn_bottom[POSTAG_BLOB] = data_top[POSTAG_BLOB];
+	//bn_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
+	//bn_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
+	//bn_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
+	//bn_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
 
 	test_bn_layer_forward(bn_bottom, bn_top);
-
 
 	//do not handle memory, just for testing...
 	printf("\n");

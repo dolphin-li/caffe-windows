@@ -140,7 +140,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) 
 {
 	//total num
-	const int batch_num = bottom[CHANNEL_BLOB]->shape(0);
+	const int batch_num = bottom[M_BAR_BLOB]->shape(0);
 	int total_defNum = 0;
 	for (int i = 0; i < batch_num; i++)
 	{
