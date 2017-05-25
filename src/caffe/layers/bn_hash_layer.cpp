@@ -309,6 +309,10 @@ template <typename Dtype>
 void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	//forward channel and dense res
+	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
+	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
+
 	//total num
 	const int total_defNum = temp_.shape(1);
 	const Dtype mean_div = Dtype(1) / Dtype(total_defNum);
@@ -330,7 +334,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	else
 	{
 		/********1. compute the mean EX for each channel *************/
-		memset(mean_.mutable_cpu_data(), 0, sizeof(float)*channels_);
+		//memset(mean_.mutable_cpu_data(), 0, sizeof(float)*channels_);
 		caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
 			temp_.cpu_data(), mean_multiplier_.cpu_data(), Dtype(0), mean_.mutable_cpu_data());
 	}
@@ -345,7 +349,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
 	if (!use_global_stats_)
 	{
-		memset(variance_.mutable_cpu_data(), 0, sizeof(float)*channels_);
+		//memset(variance_.mutable_cpu_data(), 0, sizeof(float)*channels_);
 		caffe_powx(temp_.count(), temp_.cpu_data(), Dtype(2),
 			temp2_.mutable_cpu_data());  // (X-EX)^2
 		caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, var_div,
@@ -372,12 +376,12 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	//set variance to inV
 	for (int c = 0; c < channels_; c++)
 	{
-		variance_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
+		inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / inv_sqrt_var_.cpu_data()[c];
 	}
 
-	// replicate variance to input size
+	// replicate inv_variance to input size
 	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
-		(Dtype)1, variance_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
+		(Dtype)1, inv_sqrt_var_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
 		temp2_.mutable_cpu_data());
 	
 	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
@@ -388,100 +392,77 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 template <typename Dtype>
 void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
-    const vector<Blob<Dtype>*>& bottom) {
-  //const Dtype* top_diff;
-  //if (bottom[0] != top[0]) {
-  //  top_diff = top[0]->cpu_diff();
-  //} else {
-  //  caffe_copy(x_norm_.count(), top[0]->cpu_diff(), x_norm_.mutable_cpu_diff());
-  //  top_diff = x_norm_.cpu_diff();
-  //}
-  //Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-  //if (use_global_stats_) {
-  //  if (disable_variance_) {
-  //    if (bottom[0] != top[0]) {
-  //      caffe_copy(top[0]->count(), top[0]->cpu_diff(), bottom_diff);
-  //    }
-  //  }
-  //  else {
-  //    caffe_div(temp_.count(), top_diff, temp_.cpu_data(), bottom_diff);
-  //  }
-  //  return;
-  //}
-  //const Dtype* top_data = x_norm_.cpu_data();
-  //int num = bottom[0]->shape()[0];
-  //int spatial_dim = bottom[0]->count()/(bottom[0]->shape(0)*channels_);
-  //// if Y = (X-mean(X))/(sqrt(var(X)+eps)), then
-  ////
-  //// dE(Y)/dX =
-  ////   (dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y)
-  ////     ./ sqrt(var(X) + eps)
-  ////
-  //// where \cdot and ./ are hadamard product and elementwise division,
-  //// respectively, dE/dY is the top diff, and mean/var/sum are all computed
-  //// along all dimensions except the channels dimension.  In the above
-  //// equation, the operations allow for expansion (i.e. broadcast) along all
-  //// dimensions except the channels dimension where required.
-  //// --------------------------------------------------------
-  //// If disable_vairance is set, the derivative change to
-  //// dE(Y)/dX = dE/dY - mean(dE/dY)
-  //// If disable_mean is set, derivative becomes
-  //// dE(Y)/dX =
-  ////   (dE/dY - mean(dE/dY \cdot Y) \cdot Y)
-  ////     ./ sqrt(var(X) + eps)
+    const vector<Blob<Dtype>*>& bottom) 
+{
+	const Dtype* top_diff = top[HASH_DATA_BLOB]->cpu_diff();
+	Dtype* bottom_diff = bottom[HASH_DATA_BLOB]->mutable_cpu_diff();
+	const int total_defNum = temp_.shape(1);
+	const Dtype mean_div = Dtype(1) / Dtype(total_defNum);
+	//const Dtype var_div = Dtype(1) / Dtype(std::max(1, total_defNum - 1));
+	const Dtype var_div = mean_div;	//will be bias-corrected when adding to blob[1]
 
-  //if (!disable_variance_) {
-  //  // sum(dE/dY \cdot Y)
-  //  caffe_mul(temp_.count(), top_data, top_diff, bottom_diff);
-  //  caffe_cpu_gemv<Dtype>(CblasNoTrans, channels_ * num, spatial_dim, 1.,
-  //                        bottom_diff, spatial_sum_multiplier_.cpu_data(), 0.,
-  //                        num_by_chans_.mutable_cpu_data());
-  //  caffe_cpu_gemv<Dtype>(CblasTrans, num, channels_, 1.,
-  //                        num_by_chans_.cpu_data(), batch_sum_multiplier_.cpu_data(), 0.,
-  //                        mean_.mutable_cpu_data());
+	//convert top_dif to tmp
+	backward_topDif2temp_cpu(bottom, top);
+	if (use_global_stats_) 
+	{
+		// replicate inv_variance to input size
+		caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+			(Dtype)1, inv_sqrt_var_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
+			temp2_.mutable_cpu_data());
+		caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
+		backward_temp2BottomDif_cpu(bottom, top);
+		return;
+	}
 
-  //  // reshape (broadcast) the above
-  //  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num, channels_, 1, 1,
-  //                        batch_sum_multiplier_.cpu_data(), mean_.cpu_data(), 0.,
-  //                        num_by_chans_.mutable_cpu_data());
-  //  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_ * num,
-  //                        spatial_dim, 1, 1., num_by_chans_.cpu_data(),
-  //                        spatial_sum_multiplier_.cpu_data(), 0., bottom_diff);
 
-  //  // sum(dE/dY \cdot Y) \cdot Y
-  //  caffe_mul(temp_.count(), top_data, bottom_diff, bottom_diff);
-  //}
-  //else {
-  //  caffe_set(temp_.count(), Dtype(0), bottom_diff);
-  //}
+	// if Y = (X-mean(X))/(sqrt(var(X)+eps)), then
+	//
+	// dE(Y)/dX =
+	//   (dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y)
+	//     ./ sqrt(var(X) + eps)
+	//
+	// where \cdot and ./ are hadamard product and elementwise division,
+	// respectively, dE/dY is the top diff, and mean/var/sum are all computed
+	// along all dimensions except the channels dimension.  In the above
+	// equation, the operations allow for expansion (i.e. broadcast) along all
+	// dimensions except the channels dimension where required.
+	// --------------------------------------------------------
+	// If disable_vairance is set, the derivative change to
+	// dE(Y)/dX = dE/dY - mean(dE/dY)
+	// If disable_mean is set, derivative becomes
+	// dE(Y)/dX =
+	//   (dE/dY - mean(dE/dY \cdot Y) \cdot Y)
+	//     ./ sqrt(var(X) + eps)
 
-  //if (!disable_mean_) {
-  //  // sum(dE/dY)
-  //  caffe_cpu_gemv<Dtype>(CblasNoTrans, channels_ * num, spatial_dim, 1.,
-  //                        top_diff, spatial_sum_multiplier_.cpu_data(), 0.,
-  //                        num_by_chans_.mutable_cpu_data());
-  //  caffe_cpu_gemv<Dtype>(CblasTrans, num, channels_, 1.,
-  //                        num_by_chans_.cpu_data(), batch_sum_multiplier_.cpu_data(), 0.,
-  //                        mean_.mutable_cpu_data());
-  //  // reshape (broadcast) the above to make
-  //  // sum(dE/dY)+sum(dE/dY \cdot Y) \cdot Y
-  //  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num, channels_, 1, 1,
-  //                        batch_sum_multiplier_.cpu_data(), mean_.cpu_data(), 0.,
-  //                        num_by_chans_.mutable_cpu_data());
-  //  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num * channels_,
-  //                        spatial_dim, 1, 1., num_by_chans_.cpu_data(),
-  //                        spatial_sum_multiplier_.cpu_data(), 1., bottom_diff);
-  //}
+	
+	//step1. mean(dE/dY \cdot Y)
+	top_2_buf(bottom, top, temp2_);	//convert Y to temp2_
+	//dE/dY \cdot Y; // NOTE: here temp_ is modified
+	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
+	//mean
+	caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
+		temp_.cpu_data(), mean_multiplier_.cpu_data(), Dtype(0), mean_.mutable_cpu_data());
+	
+	//step2. mean(dE/dY \cdot Y) \cdot Y
+	//reshape mean to input size
+	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+		(Dtype)1, mean_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
+		temp_.mutable_cpu_data());
+	// mean(dE/dY \cdot Y) \cdot Y
+	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp2_.mutable_cpu_data());
 
-  //// dE/dY - mean(dE/dY)-mean(dE/dY \cdot Y) \cdot Y
-  //caffe_cpu_axpby(temp_.count(), Dtype(1), top_diff,
-  //    Dtype(-1. / (num * spatial_dim)), bottom_diff);
+	//step3. dE/dY - mean(dE/dY \cdot Y) \cdot Y
+	//convert top_dif to tmp
+	backward_topDif2temp_cpu(bottom, top);
+	caffe_sub(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
 
-  //if (!disable_variance_) {
-  //  // note: temp_ still contains sqrt(var(X)+eps), computed during the forward
-  //  // pass.
-  //  caffe_div(temp_.count(), bottom_diff, temp_.cpu_data(), bottom_diff);
-  //}
+	//step4. (dE/dY - mean(dE/dY \cdot Y) \cdot Y) / sqrt(var(X) + eps)
+	// replicate inv_variance to input size
+	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+		(Dtype)1, inv_sqrt_var_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
+		temp2_.mutable_cpu_data());
+	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
+	backward_temp2BottomDif_cpu(bottom, top);
 }
 
 
@@ -538,7 +519,7 @@ template <typename Dtype>
 void BNHashLayer<Dtype>::forward_temp2hash_cpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
-	float *hash = (float*)top[HASH_DATA_BLOB]->cpu_data();
+	float *hash = (float*)top[HASH_DATA_BLOB]->mutable_cpu_data();
 	const unsigned char *offsets = (const unsigned char*)bottom[OFFSET_BLOB]->cpu_data();
 	const PACKED_POSITION *posTags = (const PACKED_POSITION*)bottom[POSTAG_BLOB]->cpu_data();
 	const Dtype* temp = temp_.cpu_data();
@@ -580,6 +561,158 @@ void BNHashLayer<Dtype>::forward_temp2hash_cpu(const vector<Blob<Dtype>*>& botto
 		posTags += m;
 
 		temp += def_num;
+	}
+}
+
+
+
+template <typename Dtype>
+void BNHashLayer<Dtype>::backward_topDif2temp_cpu(const vector<Blob<Dtype>*>& bottom, 
+	const vector<Blob<Dtype>*>& top)
+{
+	const float *hash_dif = (const float*)top[HASH_DATA_BLOB]->cpu_diff();
+	const unsigned char *offsets = (const unsigned char*)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTags = (const PACKED_POSITION*)bottom[POSTAG_BLOB]->cpu_data();
+	Dtype* temp = temp_.mutable_cpu_data();
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int total_def_num = temp_.shape(1);
+	for (int i = 0; i < batch_num; ++i)
+	{
+		const float *cur_hash_dif = hash_dif;
+		const unsigned char* cur_offset = offsets;
+		const PACKED_POSITION *cur_posTag = posTags;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		Dtype *cur_tmp = temp;
+
+		for (int v = 0; v < m; v++)
+		{
+			if (!ishashVoxelDefined(&cur_posTag[v]))
+			{
+				continue;
+			}
+			const float *data_ptr = &cur_hash_dif[v];
+			Dtype *temp_ptr = cur_tmp;
+			for (int c = 0; c < channels_; c++)
+			{
+				*temp_ptr = (Dtype)*data_ptr;
+				data_ptr += m;
+				temp_ptr += total_def_num;
+			}
+			cur_tmp++;
+		}
+
+		//to next hash
+		hash_dif += m * channels_;
+		offsets += r * 3;
+		posTags += m;
+
+		temp += def_num;
+	}
+}
+
+
+
+template <typename Dtype>
+void BNHashLayer<Dtype>::backward_temp2BottomDif_cpu(const vector<Blob<Dtype>*>& bottom,
+	const vector<Blob<Dtype>*>& top)
+{
+	float *hash_dif = (float*)bottom[HASH_DATA_BLOB]->mutable_cpu_diff();
+	const unsigned char *offsets = (const unsigned char*)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTags = (const PACKED_POSITION*)bottom[POSTAG_BLOB]->cpu_data();
+	const Dtype* temp = temp_.cpu_data();
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int total_def_num = temp_.shape(1);
+	for (int i = 0; i < batch_num; ++i)
+	{
+		float *cur_hash_dif = hash_dif;
+		const unsigned char* cur_offset = offsets;
+		const PACKED_POSITION *cur_posTag = posTags;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		const Dtype *cur_tmp = temp;
+
+		for (int v = 0; v < m; v++)
+		{
+			if (!ishashVoxelDefined(&cur_posTag[v]))
+			{
+				continue;
+			}
+			float *data_ptr = &cur_hash_dif[v];
+			const Dtype *temp_ptr = cur_tmp;
+			for (int c = 0; c < channels_; c++)
+			{
+				*data_ptr = (Dtype)*temp_ptr;
+				data_ptr += m;
+				temp_ptr += total_def_num;
+			}
+			cur_tmp++;
+		}
+
+		//to next hash
+		hash_dif += m * channels_;
+		offsets += r * 3;
+		posTags += m;
+
+		temp += def_num;
+	}
+}
+
+
+template <typename Dtype>
+void BNHashLayer<Dtype>::top_2_buf(const vector<Blob<Dtype>*>& bottom, 
+	const vector<Blob<Dtype>*>& top, Blob<Dtype> &buf)
+{
+	const float *hash = (const float*)top[HASH_DATA_BLOB]->cpu_data();
+	const unsigned char *offsets = (const unsigned char*)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTags = (const PACKED_POSITION*)bottom[POSTAG_BLOB]->cpu_data();
+	Dtype* buf_ptr = buf.mutable_cpu_data();
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int total_def_num = buf.shape(1);
+	for (int i = 0; i < batch_num; ++i)
+	{
+		const float *cur_hash = hash;
+		const unsigned char* cur_offset = offsets;
+		const PACKED_POSITION *cur_posTag = posTags;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		Dtype *cur_buf = buf_ptr;
+
+		for (int v = 0; v < m; v++)
+		{
+			if (!ishashVoxelDefined(&cur_posTag[v]))
+			{
+				continue;
+			}
+			const float *data_ptr = &cur_hash[v];
+			Dtype *temp_ptr = cur_buf;
+			for (int c = 0; c < channels_; c++)
+			{
+				*temp_ptr = (Dtype)*data_ptr;
+				data_ptr += m;
+				temp_ptr += total_def_num;
+			}
+			cur_buf++;
+		}
+
+		//to next hash
+		hash += m * channels_;
+		offsets += r * 3;
+		posTags += m;
+
+		buf_ptr += def_num;
 	}
 }
 

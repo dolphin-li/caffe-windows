@@ -198,10 +198,6 @@ void BaseConvHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& b
 	std::vector<int> scalar_shape(1, 1);
 	top[CHANNEL_BLOB]->Reshape(scalar_shape);
 	top[DENSE_RES_BLOB]->Reshape(scalar_shape);
-
-	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = (Dtype)top_channels;
-	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
-
 }
 
 template <typename Dtype>
