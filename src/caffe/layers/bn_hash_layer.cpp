@@ -376,7 +376,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	//set variance to inV
 	for (int c = 0; c < channels_; c++)
 	{
-		inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / inv_sqrt_var_.cpu_data()[c];
+		inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
 	}
 
 	// replicate inv_variance to input size
@@ -433,7 +433,6 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	// dE(Y)/dX =
 	//   (dE/dY - mean(dE/dY \cdot Y) \cdot Y)
 	//     ./ sqrt(var(X) + eps)
-
 	
 	//step1. mean(dE/dY \cdot Y)
 	top_2_buf(bottom, top, temp2_);	//convert Y to temp2_
@@ -451,12 +450,22 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	// mean(dE/dY \cdot Y) \cdot Y
 	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp2_.mutable_cpu_data());
 
-	//step3. dE/dY - mean(dE/dY \cdot Y) \cdot Y
+	//step3. dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y
 	//convert top_dif to tmp
 	backward_topDif2temp_cpu(bottom, top);
+	//mean(dE/dY)
+	caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
+		temp_.cpu_data(), mean_multiplier_.cpu_data(), Dtype(0), mean_.mutable_cpu_data());
+	
+	//dE/dY - mean(dE/dY \cdot Y) \cdot Y
 	caffe_sub(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
 
-	//step4. (dE/dY - mean(dE/dY \cdot Y) \cdot Y) / sqrt(var(X) + eps)
+	//-= mean(dE/dY)
+	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_,
+		total_defNum, 1, (Dtype)-1, mean_.cpu_data(), mean_multiplier_.cpu_data(),
+		(Dtype)1, temp_.mutable_cpu_data());
+
+	//step4. (dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y) / sqrt(var(X) + eps)
 	// replicate inv_variance to input size
 	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
 		(Dtype)1, inv_sqrt_var_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
