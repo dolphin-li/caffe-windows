@@ -447,7 +447,8 @@ RegisterBrewFunction(time);
 //#define GPU_DEBUG
 const static float DATA_CHECK_EPS = 1e-6f;
 const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
-std::vector<Blob<float> *> create_blobs(int n, std::vector<Blob<float> *>* shapeLike = nullptr)
+std::vector<Blob<float> *> create_blobs(int n, const std::vector<Blob<float> *>* shapeLike = nullptr,
+	bool copy=false)
 {
 	std::vector<Blob<float> *> blobs;
 	blobs.resize(n);
@@ -455,7 +456,14 @@ std::vector<Blob<float> *> create_blobs(int n, std::vector<Blob<float> *>* shape
 	{
 		blobs[i] = new Blob<float>();
 		if (shapeLike)
+		{
 			blobs[i]->ReshapeLike(*(*shapeLike)[i]);
+			if (copy)
+			{
+				caffe::caffe_copy(blobs[i]->count(), (*shapeLike)[i]->cpu_data(), blobs[i]->mutable_cpu_data());
+				caffe::caffe_copy(blobs[i]->count(), (*shapeLike)[i]->cpu_diff(), blobs[i]->mutable_cpu_diff());
+			}
+		}
 	}
 	return blobs;
 }
@@ -682,6 +690,18 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 	blobs_2_batchHash(structed_top_dif, top_dif_batch,1);
 	top_dif_batch.m_channels = top_channels;
 	writeBatchHash_2_denseFiles(top_dif_batch, dense_res, "top_dif");
+
+#ifdef GPU_DEBUG
+	Caffe::set_mode(Caffe::Brew::GPU);
+	pConvLayer->Backward(top, bp_flag, bottom);
+
+	blobs_2_batchHash(bottom, bottom_dif_batch, 1);
+	bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "bottom_dif_gpu");
+
+	Caffe::set_mode(Caffe::Brew::CPU);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 caffe::PoolHashLayer<float> *test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,
@@ -780,6 +800,16 @@ void test_pool_layer_backward(caffe::PoolHashLayer<float> *pPoolLayer, const std
 	}
 	std::vector<bool> bp_flag; //no use
 	pPoolLayer->Backward(top, bp_flag, bottom);
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto cpu_bottom = create_blobs(bottom.size(), &bottom, true);
+	pPoolLayer->Backward(top, bp_flag, bottom);
+	GPU_CPU_COMPARE(cpu_bottom, bottom);
+	Caffe::set_mode(Caffe::Brew::CPU);
+	release_blobs(cpu_bottom);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 caffe::BNHashLayer<float> *test_bn_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
@@ -848,9 +878,9 @@ caffe::BNHashLayer<float> *test_bn_layer_forward(const std::vector<Blob<float> *
 	//writeBatchHash_2_denseFiles(top_batch, dense_res, "top_bn_gpu");
 	//save to HDF5 for debug
 
-	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
-	structed_top[CHANNEL_BLOB] = top[CHANNEL_BLOB];
-	structed_top[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
+	structed_top[HASH_DATA_BLOB] = gpu_top[HASH_DATA_BLOB];
+	structed_top[CHANNEL_BLOB] = gpu_top[CHANNEL_BLOB];
+	structed_top[DENSE_RES_BLOB] = gpu_top[DENSE_RES_BLOB];
 	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB];
 	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB];
 	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB];
