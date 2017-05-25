@@ -690,6 +690,18 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 	blobs_2_batchHash(structed_top_dif, top_dif_batch,1);
 	top_dif_batch.m_channels = top_channels;
 	writeBatchHash_2_denseFiles(top_dif_batch, dense_res, "top_dif");
+
+#ifdef GPU_DEBUG
+	Caffe::set_mode(Caffe::Brew::GPU);
+	pConvLayer->Backward(top, bp_flag, bottom);
+
+	blobs_2_batchHash(bottom, bottom_dif_batch, 1);
+	bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "bottom_dif_gpu");
+
+	Caffe::set_mode(Caffe::Brew::CPU);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 caffe::PoolHashLayer<float> *test_pool_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top,

@@ -504,47 +504,37 @@ void BaseConvHashLayer<Dtype>::forward_gpu_bias(float* out_col_buf, const float*
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::backward_gpu_gemm(const Dtype* output,
-    const Dtype* weights, Dtype* input) {
-	//TODO:
-  //Dtype* col_buff = col_buffer_.mutable_gpu_data();
-  //if (is_1x1_) {
-  //  col_buff = input;
-  //}
-  //for (int g = 0; g < group_; ++g) {
-  //  caffe_gpu_gemm<Dtype>(CblasTrans, CblasNoTrans, kernel_dim_,
-  //      conv_out_spatial_dim_, conv_out_channels_ / group_,
-  //      (Dtype)1., weights + weight_offset_ * g, output + output_offset_ * g,
-  //      (Dtype)0., col_buff + col_offset_ * g);
-  //}
-  //if (!is_1x1_) {
-  //  conv_col2im_gpu(col_buff, input);
-  //}
+void BaseConvHashLayer<Dtype>::backward_gpu_gemm(const float *out_col_buf,
+	int bottom_channels, int top_channels, int defined_voxel_num, float *col_buf)
+{
+	const int *kernel_shape = kernel_shape_.cpu_data();
+	const int kernel_size = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
+
+	//delta_x = WT * delta_y
+	caffe_gpu_gemm<float>(CblasTrans, CblasNoTrans, bottom_channels*kernel_size,
+		defined_voxel_num, top_channels,
+		1.f, (const float*)this->blobs_[0]->gpu_data(), out_col_buf,
+		0.f, col_buf);
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::weight_gpu_gemm(const Dtype* input,
-    const Dtype* output, Dtype* weights) {
-	//TODO:
-  //const Dtype* col_buff = input;
-  //if (!is_1x1_) {
-  //  conv_im2col_gpu(input, col_buffer_.mutable_gpu_data());
-  //  col_buff = col_buffer_.gpu_data();
-  //}
-  //for (int g = 0; g < group_; ++g) {
-  //  caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasTrans, conv_out_channels_ / group_,
-  //      kernel_dim_, conv_out_spatial_dim_,
-  //      (Dtype)1., output + output_offset_ * g, col_buff + col_offset_ * g,
-  //      (Dtype)1., weights + weight_offset_ * g);
-  //}
+void BaseConvHashLayer<Dtype>::weight_gpu_gemm(const float *col_buf, const float* out_col_buf, float *weight_dif,
+	int bottom_channels, int top_channels, int defined_voxel_num)
+{
+	const int *kernel_shape = kernel_shape_.cpu_data();
+	const int kernel_size = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
+
+	caffe_gpu_gemm<float>(CblasNoTrans, CblasTrans, top_channels,
+		bottom_channels*kernel_size, defined_voxel_num,
+		1.f, out_col_buf, col_buf,
+		1.f, weight_dif);
 }
 
 template <typename Dtype>
-void BaseConvHashLayer<Dtype>::backward_gpu_bias(Dtype* bias,
-    const Dtype* input) {
-	//TODO:
-  //caffe_gpu_gemv<Dtype>(CblasNoTrans, num_output_, out_spatial_dim_, 1.,
-  //    input, bias_multiplier_.gpu_data(), 1., bias);
+void BaseConvHashLayer<Dtype>::backward_gpu_bias(float* bias, const float* out_col_buf, int defined_voxel_num)
+{
+	caffe_gpu_gemv<float>(CblasNoTrans, num_output_, defined_voxel_num, 1.,
+		out_col_buf, (const float*)bias_multiplier_.gpu_data(), 1., bias);
 }
 
 template <typename Dtype>
