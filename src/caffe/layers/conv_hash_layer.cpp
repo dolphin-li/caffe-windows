@@ -126,7 +126,12 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 			{
 				//NOTE: now col_buf is updated to bottom_dif in backward_cpu_gemm
 				this->backward_cpu_gemm((const float*)out_col_buffer_.cpu_data(), channels_,
-					num_output_,defNum, (float*)col_buffer_.mutable_cpu_data());	
+					num_output_,defNum, (float*)col_buffer_.mutable_cpu_data());
+#if 0
+				char name[128];
+				sprintf(name,"col_buf_%d.hf5",i);
+				writeDense_2_HF5((const float*)col_buffer_.cpu_data(), col_buffer_.shape(0), 1, col_buffer_.shape(1), name);
+#endif
 				//convert the col_buf to bottom dif
 				bottom_col2hash_cpu(bottom_dif, offset_data, pos_tags, kernel_shape_.cpu_data(),
 					m_bar, r_bar, channels_, defNum, dense_res, (const float*)col_buffer_.cpu_data());

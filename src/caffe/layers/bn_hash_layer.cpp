@@ -135,19 +135,188 @@ void BNHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 }
 
 
+//template <typename Dtype>
+//void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+//    const vector<Blob<Dtype>*>& top) 
+//{
+//	//total num
+//	const int batch_num = bottom[M_BAR_BLOB]->shape(0);
+//	int total_defNum = 0;
+//	for (int i = 0; i < batch_num; i++)
+//	{
+//		total_defNum += (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+//	}
+//	CHECK_GT(total_defNum, 0);
+//	const float ave_w = 1.f / (float)total_defNum;
+//
+//	if (use_global_stats_) {
+//		// use the stored mean/variance estimates.
+//		const Dtype scale_factor = this->blobs_[2]->cpu_data()[0] == 0 ?
+//			0 : 1 / this->blobs_[2]->cpu_data()[0];
+//		caffe_cpu_scale(variance_.count(), scale_factor,
+//			this->blobs_[0]->cpu_data(), mean_.mutable_cpu_data());
+//		caffe_cpu_scale(variance_.count(), scale_factor,
+//			this->blobs_[1]->cpu_data(), variance_.mutable_cpu_data());
+//	}
+//	else
+//	{
+//		/********1. compute the mean EX for each channel *************/
+//		const float *bt_hash_ptr = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
+//		const unsigned char* bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+//		const PACKED_POSITION *bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+//
+//		memset(mean_.mutable_cpu_data(), 0, sizeof(float)*channels_);
+//		for (int i = 0; i < batch_num; ++i)
+//		{
+//			const float* bottom_data = bt_hash_ptr;
+//			const unsigned char*offset_data = bt_offset_ptr;
+//			const PACKED_POSITION *pos_tags = bt_posTag_ptr;
+//			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+//			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+//			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+//
+//			calc_sum(bottom_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, ave_w, (float*)temp_.mutable_cpu_data());
+//			for (int c = 0; c < channels_; c++)
+//			{
+//				mean_.mutable_cpu_data()[c] += temp_.cpu_data()[c];
+//			}
+//
+//			//to next hash
+//			const int m = m_bar * m_bar * m_bar;
+//			const int r = r_bar * r_bar * r_bar;
+//
+//			bt_hash_ptr += m * channels_;
+//			bt_offset_ptr += r * 3;
+//			bt_posTag_ptr += m;
+//		}
+//	}
+//	
+//	
+//	/**********************2 substract mean****************/
+//	float *tp_hash_ptr = (float*)top[HASH_DATA_BLOB]->mutable_cpu_data();
+//	const float *bt_hash_ptr = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
+//	const unsigned char *bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+//	const PACKED_POSITION *bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+//
+//	//copy bottom to top
+//	memcpy(tp_hash_ptr,bt_hash_ptr,sizeof(float)*batch_hash_size_ * channels_);
+//	//subtract mean
+//	for (int i = 0; i < batch_num; ++i)
+//	{
+//		float* top_data = tp_hash_ptr;
+//		const unsigned char* offset_data = bt_offset_ptr;
+//		const PACKED_POSITION *pos_tags = bt_posTag_ptr;
+//		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+//		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+//		const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+//
+//		hash_subtract_scalar(top_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, (const float*)mean_.cpu_data());
+//		
+//		//to next hash
+//		const int m = m_bar * m_bar * m_bar;
+//		const int r = r_bar * r_bar * r_bar;
+//
+//		tp_hash_ptr += m * channels_;
+//		bt_offset_ptr += r * 3;
+//		bt_posTag_ptr += m;
+//	}
+//	
+//	/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
+//	if (!use_global_stats_) 
+//	{
+//		memset(variance_.mutable_cpu_data(), 0, sizeof(float)*channels_);
+//		const float *tp_hash_ptr = (const float*)top[HASH_DATA_BLOB]->cpu_data();
+//		const unsigned char* bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+//		const PACKED_POSITION *bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+//		// E((X-EX)^2)
+//		for (int i = 0; i < batch_num; ++i)
+//		{
+//			const float* top_data = tp_hash_ptr;	//here top is already X - EX
+//			const unsigned char* offset_data = bt_offset_ptr;
+//			const PACKED_POSITION *pos_tags = bt_posTag_ptr;
+//			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+//			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+//			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+//
+//			calc_square_sum(top_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, ave_w, (float*)temp_.mutable_cpu_data());
+//			for (int c = 0; c < channels_; c++)
+//			{
+//				variance_.mutable_cpu_data()[c] += temp_.cpu_data()[c];
+//			}
+//
+//			//to next hash
+//			const int m = m_bar * m_bar * m_bar;
+//			const int r = r_bar * r_bar * r_bar;
+//
+//			tp_hash_ptr += m * channels_;
+//			bt_offset_ptr += r * 3;
+//			bt_posTag_ptr += m;
+//		}
+//
+//
+//		// compute and save moving average
+//		this->blobs_[2]->mutable_cpu_data()[0] *= moving_average_fraction_;
+//		this->blobs_[2]->mutable_cpu_data()[0] += 1;
+//		
+//		caffe_cpu_axpby(mean_.count(), Dtype(1), mean_.cpu_data(),
+//						moving_average_fraction_, this->blobs_[0]->mutable_cpu_data());
+//		
+//		
+//		Dtype bias_correction_factor = total_defNum > 1 ? Dtype(total_defNum) / (total_defNum - 1) : 1;
+//		caffe_cpu_axpby(variance_.count(), bias_correction_factor,
+//						variance_.cpu_data(), moving_average_fraction_,
+//						this->blobs_[1]->mutable_cpu_data());
+//	}
+//
+//
+//	/********************3. compute final top (X-mean(X))/(sqrt(var(X)+eps))***********************/
+//	// normalize variance
+//	caffe_add_scalar(variance_.count(), eps_, variance_.mutable_cpu_data());
+//	caffe_powx(variance_.count(), variance_.cpu_data(), Dtype(0.5),
+//				variance_.mutable_cpu_data());
+//
+//	for (int c=0;c<channels_;c++)
+//	{
+//		inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
+//	}
+//	// div by sqrt(var(X)+eps)
+//	tp_hash_ptr = (float*)top[HASH_DATA_BLOB]->mutable_cpu_data();
+//	bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+//	bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+//	for (int i = 0; i < batch_num; ++i)
+//	{
+//		float* top_data = tp_hash_ptr;
+//		const unsigned char* offset_data = bt_offset_ptr;
+//		const PACKED_POSITION *pos_tags = bt_posTag_ptr;
+//		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+//		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+//		const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+//
+//		hash_mult_scalar(top_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, (const float*)inv_sqrt_var_.cpu_data());
+//
+//
+//		//to next hash
+//		const int m = m_bar * m_bar * m_bar;
+//		const int r = r_bar * r_bar * r_bar;
+//
+//		tp_hash_ptr += m * channels_;
+//		bt_offset_ptr += r * 3;
+//		bt_posTag_ptr += m;
+//	}
+//}
+
 template <typename Dtype>
 void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-    const vector<Blob<Dtype>*>& top) 
+	const vector<Blob<Dtype>*>& top)
 {
 	//total num
-	const int batch_num = bottom[M_BAR_BLOB]->shape(0);
-	int total_defNum = 0;
-	for (int i = 0; i < batch_num; i++)
-	{
-		total_defNum += (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
-	}
-	CHECK_GT(total_defNum, 0);
-	const float ave_w = 1.f / (float)total_defNum;
+	const int total_defNum = temp_.shape(1);
+	const Dtype mean_div = Dtype(1) / Dtype(total_defNum);
+	//const Dtype var_div = Dtype(1) / Dtype(std::max(1, total_defNum - 1));
+	const Dtype var_div = mean_div;	//will be bias-corrected when adding to blob[1]
+
+									// prepare temp_ array
+	forward_hash2temp_cpu(bottom, top);
 
 	if (use_global_stats_) {
 		// use the stored mean/variance estimates.
@@ -161,149 +330,59 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	else
 	{
 		/********1. compute the mean EX for each channel *************/
-		const float *bt_hash_ptr = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
-		const unsigned char* bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
-		const PACKED_POSITION *bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
-
 		memset(mean_.mutable_cpu_data(), 0, sizeof(float)*channels_);
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const float* bottom_data = bt_hash_ptr;
-			const unsigned char*offset_data = bt_offset_ptr;
-			const PACKED_POSITION *pos_tags = bt_posTag_ptr;
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
-			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
-
-			calc_sum(bottom_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, ave_w, (float*)temp_.mutable_cpu_data());
-			for (int c = 0; c < channels_; c++)
-			{
-				mean_.mutable_cpu_data()[c] += temp_.cpu_data()[c];
-			}
-
-			//to next hash
-			const int m = m_bar * m_bar * m_bar;
-			const int r = r_bar * r_bar * r_bar;
-
-			bt_hash_ptr += m * channels_;
-			bt_offset_ptr += r * 3;
-			bt_posTag_ptr += m;
-		}
+		caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
+			temp_.cpu_data(), mean_multiplier_.cpu_data(), Dtype(0), mean_.mutable_cpu_data());
 	}
-	
-	
+
+
 	/**********************2 substract mean****************/
-	float *tp_hash_ptr = (float*)top[HASH_DATA_BLOB]->mutable_cpu_data();
-	const float *bt_hash_ptr = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
-	const unsigned char *bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
-	const PACKED_POSITION *bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+	// subtract mean
+	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_,
+		total_defNum, 1, (Dtype)-1, mean_.cpu_data(), mean_multiplier_.cpu_data(),
+		(Dtype)1, temp_.mutable_cpu_data());
 
-	//copy bottom to top
-	memcpy(tp_hash_ptr,bt_hash_ptr,sizeof(float)*batch_hash_size_ * channels_);
-	//subtract mean
-	for (int i = 0; i < batch_num; ++i)
-	{
-		float* top_data = tp_hash_ptr;
-		const unsigned char* offset_data = bt_offset_ptr;
-		const PACKED_POSITION *pos_tags = bt_posTag_ptr;
-		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
-		const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
-
-		hash_subtract_scalar(top_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, (const float*)mean_.cpu_data());
-		
-
-		//to next hash
-		const int m = m_bar * m_bar * m_bar;
-		const int r = r_bar * r_bar * r_bar;
-
-		tp_hash_ptr += m * channels_;
-		bt_offset_ptr += r * 3;
-		bt_posTag_ptr += m;
-	}
-	
 	/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
-	if (!use_global_stats_) 
+	if (!use_global_stats_)
 	{
 		memset(variance_.mutable_cpu_data(), 0, sizeof(float)*channels_);
-		const float *tp_hash_ptr = (const float*)top[HASH_DATA_BLOB]->cpu_data();
-		const unsigned char* bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
-		const PACKED_POSITION *bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
-		// E((X-EX)^2)
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const float* top_data = tp_hash_ptr;	//here top is already X - EX
-			const unsigned char* offset_data = bt_offset_ptr;
-			const PACKED_POSITION *pos_tags = bt_posTag_ptr;
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
-			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
-
-			calc_square_sum(top_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, ave_w, (float*)temp_.mutable_cpu_data());
-			for (int c = 0; c < channels_; c++)
-			{
-				variance_.mutable_cpu_data()[c] += temp_.cpu_data()[c];
-			}
-
-			//to next hash
-			const int m = m_bar * m_bar * m_bar;
-			const int r = r_bar * r_bar * r_bar;
-
-			tp_hash_ptr += m * channels_;
-			bt_offset_ptr += r * 3;
-			bt_posTag_ptr += m;
-		}
-
+		caffe_powx(temp_.count(), temp_.cpu_data(), Dtype(2),
+			temp2_.mutable_cpu_data());  // (X-EX)^2
+		caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, var_div,
+			temp2_.cpu_data(), mean_multiplier_.cpu_data(), Dtype(0), variance_.mutable_cpu_data());
 
 		// compute and save moving average
 		this->blobs_[2]->mutable_cpu_data()[0] *= moving_average_fraction_;
 		this->blobs_[2]->mutable_cpu_data()[0] += 1;
-		
+
 		caffe_cpu_axpby(mean_.count(), Dtype(1), mean_.cpu_data(),
-						moving_average_fraction_, this->blobs_[0]->mutable_cpu_data());
-		
-		
-		Dtype bias_correction_factor = total_defNum > 1 ? Dtype(total_defNum) / (total_defNum - 1) : 1;
+			moving_average_fraction_, this->blobs_[0]->mutable_cpu_data());
+
+		Dtype bias_correction_factor = total_defNum > 1 ? Dtype(total_defNum) / Dtype(total_defNum - 1) : 1;
 		caffe_cpu_axpby(variance_.count(), bias_correction_factor,
-						variance_.cpu_data(), moving_average_fraction_,
-						this->blobs_[1]->mutable_cpu_data());
+			variance_.cpu_data(), moving_average_fraction_, this->blobs_[1]->mutable_cpu_data());
 	}
 
-
-	/********************3. compute final top (X-mean(X))/(sqrt(var(X)+eps))***********************/
+	/********************4. compute final top (X-mean(X))/(sqrt(var(X)+eps))***********************/
 	// normalize variance
 	caffe_add_scalar(variance_.count(), eps_, variance_.mutable_cpu_data());
 	caffe_powx(variance_.count(), variance_.cpu_data(), Dtype(0.5),
-				variance_.mutable_cpu_data());
+		variance_.mutable_cpu_data());
 
-	for (int c=0;c<channels_;c++)
+	//set variance to inV
+	for (int c = 0; c < channels_; c++)
 	{
-		inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
+		variance_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
 	}
-	// div by sqrt(var(X)+eps)
-	tp_hash_ptr = (float*)top[HASH_DATA_BLOB]->mutable_cpu_data();
-	bt_offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
-	bt_posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
-	for (int i = 0; i < batch_num; ++i)
-	{
-		float* top_data = tp_hash_ptr;
-		const unsigned char* offset_data = bt_offset_ptr;
-		const PACKED_POSITION *pos_tags = bt_posTag_ptr;
-		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
-		const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
 
-		hash_mult_scalar(top_data, offset_data, pos_tags, m_bar, r_bar, channels_, defNum, (const float*)inv_sqrt_var_.cpu_data());
+	// replicate variance to input size
+	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+		(Dtype)1, variance_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
+		temp2_.mutable_cpu_data());
+	
+	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
 
-
-		//to next hash
-		const int m = m_bar * m_bar * m_bar;
-		const int r = r_bar * r_bar * r_bar;
-
-		tp_hash_ptr += m * channels_;
-		bt_offset_ptr += r * 3;
-		bt_posTag_ptr += m;
-	}
+	forward_temp2hash_cpu(bottom, top);
 }
 
 template <typename Dtype>
@@ -405,6 +484,104 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   //}
 }
 
+
+template <typename Dtype>
+void BNHashLayer<Dtype>::forward_hash2temp_cpu(const vector<Blob<Dtype>*>& bottom,
+	const vector<Blob<Dtype>*>& top)
+{
+	const float *hash = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
+	const unsigned char *offsets = (const unsigned char*)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTags = (const PACKED_POSITION*)bottom[POSTAG_BLOB]->cpu_data();
+	Dtype* temp = temp_.mutable_cpu_data();
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int total_def_num = temp_.shape(1);
+	for (int i = 0; i < batch_num; ++i)
+	{
+		const float *cur_hash = hash;
+		const unsigned char* cur_offset = offsets;
+		const PACKED_POSITION *cur_posTag = posTags;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		Dtype *cur_tmp = temp;
+
+		for (int v=0;v<m;v++)
+		{
+			if (!ishashVoxelDefined(&cur_posTag[v]))
+			{
+				continue;
+			}
+			const float *data_ptr = &cur_hash[v];
+			Dtype *temp_ptr = cur_tmp;
+			for (int c = 0; c < channels_; c++)
+			{
+				*temp_ptr = (Dtype)*data_ptr;
+				data_ptr += m;
+				temp_ptr += total_def_num;
+			}
+			cur_tmp++;
+		}
+
+		//to next hash
+		hash += m * channels_;
+		offsets += r*3;
+		posTags += m;
+
+		temp += def_num;
+	}
+}
+
+template <typename Dtype>
+void BNHashLayer<Dtype>::forward_temp2hash_cpu(const vector<Blob<Dtype>*>& bottom,
+	const vector<Blob<Dtype>*>& top)
+{
+	float *hash = (float*)top[HASH_DATA_BLOB]->cpu_data();
+	const unsigned char *offsets = (const unsigned char*)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTags = (const PACKED_POSITION*)bottom[POSTAG_BLOB]->cpu_data();
+	const Dtype* temp = temp_.cpu_data();
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int total_def_num = temp_.shape(1);
+	for (int i = 0; i < batch_num; ++i)
+	{
+		float *cur_hash = hash;
+		const unsigned char* cur_offset = offsets;
+		const PACKED_POSITION *cur_posTag = posTags;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		const Dtype *cur_tmp = temp;
+
+		for (int v = 0; v < m; v++)
+		{
+			if (!ishashVoxelDefined(&cur_posTag[v]))
+			{
+				continue;
+			}
+			float *data_ptr = &cur_hash[v];
+			const Dtype *temp_ptr = cur_tmp;
+			for (int c = 0; c < channels_; c++)
+			{
+				*data_ptr = (Dtype)*temp_ptr;
+				data_ptr += m;
+				temp_ptr += total_def_num;
+			}
+			cur_tmp++;
+		}
+
+		//to next hash
+		hash += m * channels_;
+		offsets += r * 3;
+		posTags += m;
+
+		temp += def_num;
+	}
+}
 
 #ifdef CPU_ONLY
 STUB_GPU(BNHashLayer);

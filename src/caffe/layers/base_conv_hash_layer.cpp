@@ -344,6 +344,22 @@ void BaseConvHashLayer<Dtype>::reshape_weight_bias(const vector<Blob<Dtype> *>& 
 		shared_ptr<Filler<Dtype> > weight_filler(GetFiller<Dtype>(
 			conv_param.weight_filler()));
 		weight_filler->Fill(this->blobs_[0].get());
+
+#if 0	//for debug
+		caffe_set(this->blobs_[0]->count(), Dtype(1), this->blobs_[0]->mutable_cpu_data());
+		//const int filter_dim = kernel_shape_data[0] * kernel_shape_data[1] * kernel_shape_data[2];
+		//int center_idx = filter_dim / 2;
+		//caffe_set(this->blobs_[0]->count(), Dtype(0), this->blobs_[0]->mutable_cpu_data());
+		//for (int row = 0; row < conv_out_channels_; row++)
+		//{
+		//	int idx = row * conv_in_channels_ * filter_dim;
+		//	for (int j = 0; j < conv_in_channels_; j++)
+		//	{
+		//		this->blobs_[0]->mutable_cpu_data()[center_idx + j*filter_dim + idx] = 1.f;
+		//	}
+		//}
+#endif
+
 		// If necessary, initialize and fill the biases.
 		if (bias_term_) {
 			this->blobs_[1].reset(new Blob<Dtype>(bias_shape));
@@ -812,7 +828,6 @@ int bottom_col2hash_cpu(float* hash_data, const unsigned char *offset_data, cons
 	const int cols = defined_num;
 	//for pointer increment
 	const int cross_channel_stride = cols * kernel_dim;
-
 
 	//init hash vals to zero
 	memset(hash_data, 0, sizeof(float)*m * channels);

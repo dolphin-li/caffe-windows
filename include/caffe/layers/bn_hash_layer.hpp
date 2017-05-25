@@ -67,6 +67,11 @@ protected:
 		const vector<Blob<Dtype>*>& top);
 	void forward_temp2hash_gpu(const vector<Blob<Dtype>*>& bottom,
 		const vector<Blob<Dtype>*>& top);
+	void forward_hash2temp_cpu(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top);
+	void forward_temp2hash_cpu(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top);
+
 protected:
   Blob<Dtype> mean_, variance_;
   bool use_global_stats_;

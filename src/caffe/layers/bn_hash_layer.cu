@@ -124,7 +124,8 @@ namespace caffe {
 		//total num
 		const int total_defNum = temp_.shape(1);
 		const Dtype mean_div = Dtype(1) / Dtype(total_defNum);
-		const Dtype var_div = Dtype(1) / Dtype(std::max(1, total_defNum - 1));
+		//const Dtype var_div = Dtype(1) / Dtype(std::max(1, total_defNum - 1));
+		const Dtype var_div = mean_div;	//will be bias-corrected when adding to blob[1]
 
 		// prepare temp_ array
 		forward_hash2temp_gpu(bottom, top);
@@ -144,7 +145,7 @@ namespace caffe {
 			/********1. compute the mean EX for each channel *************/
 			cudaMemset(mean_.mutable_gpu_data(), 0, sizeof(Dtype)*channels_);
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div, 
-				temp_.mutable_gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
+				temp_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
 		}
 
 		/**********************2 substract mean****************/
@@ -158,7 +159,7 @@ namespace caffe {
 			cudaMemset(variance_.mutable_gpu_data(), 0, sizeof(Dtype)*channels_);
 			caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp_.gpu_data(), temp2_.mutable_gpu_data());
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, var_div,
-				temp2_.mutable_gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), variance_.mutable_gpu_data());
+				temp2_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), variance_.mutable_gpu_data());
 
 			// compute and save moving average
 			this->blobs_[2]->mutable_cpu_data()[0] *= moving_average_fraction_;

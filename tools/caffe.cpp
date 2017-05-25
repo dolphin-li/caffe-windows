@@ -444,7 +444,7 @@ int time() {
 RegisterBrewFunction(time);
 
 /**************************For testing hash**************************/
-#define GPU_DEBUG
+//#define GPU_DEBUG
 const static float DATA_CHECK_EPS = 1e-6f;
 const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
 std::vector<Blob<float> *> create_blobs(int n, std::vector<Blob<float> *>* shapeLike = nullptr)
@@ -648,7 +648,7 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 			float *cur_dif_ptr = top_dif_ptr;
 			for (int c=0;c<top_channels;c++)
 			{
-				*cur_dif_ptr = (float)rand() * invRand;
+				*cur_dif_ptr =  (float)rand() * invRand;
 				cur_dif_ptr += m;
 			}
 			top_dif_ptr++;
