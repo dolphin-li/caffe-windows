@@ -58,10 +58,25 @@ void BNHashLayer<Dtype>::init_self_blob(const vector<Blob<Dtype> *>& bottom)
 	this->blobs_[1].reset(new Blob<Dtype>(sz));
 	sz[0] = 1;
 	this->blobs_[2].reset(new Blob<Dtype>(sz));
-	for (int i = 0; i < 3; ++i) 
+
+	switch (Caffe::mode())
 	{
-		caffe_set(this->blobs_[i]->count(), Dtype(0),
-			this->blobs_[i]->mutable_cpu_data());
+	default:
+		break;
+	case Caffe::GPU:
+		for (int i = 0; i < 3; ++i)
+		{
+			caffe_gpu_set(this->blobs_[i]->count(), Dtype(0),
+				this->blobs_[i]->mutable_gpu_data());
+		}
+		break;
+	case Caffe::CPU:
+		for (int i = 0; i < 3; ++i)
+		{
+			caffe_set(this->blobs_[i]->count(), Dtype(0),
+				this->blobs_[i]->mutable_cpu_data());
+		}
+		break;
 	}
 }
 
@@ -91,7 +106,17 @@ void BNHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 	}
 	std::vector<int> hash_data_shape(1, batch_hash_size_ * channels_);
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
-	memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size_ * channels_);
+	switch (Caffe::mode())
+	{
+	default:
+		break;
+	case Caffe::GPU:
+		cudaMemset(top[HASH_DATA_BLOB]->mutable_gpu_data(), 0, sizeof(Dtype)*batch_hash_size_ * channels_);
+		break;
+	case Caffe::CPU:
+		memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size_ * channels_);
+		break;
+	}
 
 	//reshape top channel and dense res
 	std::vector<int> scalar_shape(1, 1);
@@ -131,7 +156,17 @@ void BNHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 	vector<int> sz3;
 	sz3.push_back(total_defNum);
 	mean_multiplier_.Reshape(sz3);
-	caffe_set(mean_multiplier_.count(), Dtype(1), mean_multiplier_.mutable_cpu_data());
+	switch (Caffe::mode())
+	{
+	default:
+		break;
+	case Caffe::GPU:
+		caffe_gpu_set(mean_multiplier_.count(), Dtype(1), mean_multiplier_.mutable_gpu_data());
+		break;
+	case Caffe::CPU:
+		caffe_set(mean_multiplier_.count(), Dtype(1), mean_multiplier_.mutable_cpu_data());
+		break;
+	}
 }
 
 
