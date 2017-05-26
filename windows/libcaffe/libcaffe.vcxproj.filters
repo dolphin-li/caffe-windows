@@ -1147,6 +1147,9 @@
     <CudaCompile Include="..\..\src\caffe\layers\bn_hash_layer.cu">
       <Filter>cu\layers</Filter>
     </CudaCompile>
+    <CudaCompile Include="..\..\src\caffe\layers\hash_2_dense_layer.cu">
+      <Filter>cu\layers</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\caffe\proto\caffe.proto">

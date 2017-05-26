@@ -431,6 +431,7 @@
     <CudaCompile Include="..\..\src\caffe\layers\cudnn_bn_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\flip_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\gram_layer.cu" />
+    <CudaCompile Include="..\..\src\caffe\layers\hash_2_dense_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\hdf5_bit_data_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\hotspot_layer.cu" />
     <CudaCompile Include="..\..\src\caffe\layers\inner_distance_layer.cu" />

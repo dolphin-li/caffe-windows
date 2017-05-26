@@ -1017,6 +1017,16 @@ caffe::Hash2DenseLayer<float> *test_hash2dense_layer_forward(const std::vector<B
 	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "H2D_bottom");
 
 	//writeDense_2_HF5(top[0]->cpu_data(), top[0]->shape(0), top[0]->shape(2), top[0]->shape(1), "hash2dense.hf5");
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto gpu_top = create_blobs(top.size(), &top);
+	hash2dense_layer->Forward(bottom, gpu_top);
+	GPU_CPU_COMPARE(top, gpu_top);
+	Caffe::set_mode(Caffe::Brew::CPU);
+	release_blobs(gpu_top);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 	return hash2dense_layer;
 }
 
@@ -1041,6 +1051,16 @@ void test_hash2dense_layer_backward(caffe::Hash2DenseLayer<float> *hash2dense_la
 	//bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
 	//int dense_res = top[0]->shape(2);
 	//writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "H2D_bottom_dif");
+#ifdef GPU_DEBUG
+	// forward gpu
+	Caffe::set_mode(Caffe::Brew::GPU);
+	auto cpu_bottom = create_blobs(bottom.size(), &bottom, true);
+	hash2dense_layer->Backward(top, bp_flag, bottom);
+	GPU_CPU_COMPARE(cpu_bottom, bottom);
+	Caffe::set_mode(Caffe::Brew::CPU);
+	release_blobs(cpu_bottom);
+	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);
+#endif
 }
 
 

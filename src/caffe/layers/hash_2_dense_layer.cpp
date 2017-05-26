@@ -171,20 +171,6 @@ STUB_GPU(Hash2DenseLayer);
 #endif
 
 
-template <typename Dtype>
-void Hash2DenseLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
-	const vector<Blob<Dtype>*>& top)
-{
-
-}
-
-template <typename Dtype>
-void Hash2DenseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
-{
-
-}
-
 INSTANTIATE_CLASS(Hash2DenseLayer);
 
 }  // namespace caffe
