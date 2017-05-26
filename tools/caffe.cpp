@@ -445,7 +445,7 @@ int time() {
 RegisterBrewFunction(time);
 
 /**************************For testing hash**************************/
-//#define GPU_DEBUG
+#define GPU_DEBUG
 const static float DATA_CHECK_EPS = 1e-6f;
 const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
 std::vector<Blob<float> *> create_blobs(int n, const std::vector<Blob<float> *>* shapeLike = nullptr,
@@ -978,11 +978,11 @@ void test_bn_layer_backward(caffe::BNHashLayer<float> *pBNLayer, const std::vect
 
 #ifdef GPU_DEBUG
 	Caffe::set_mode(Caffe::Brew::GPU);
-	pConvLayer->Backward(top, bp_flag, bottom);
+	pBNLayer->Backward(top, bp_flag, bottom);
 
 	blobs_2_batchHash(bottom, bottom_dif_batch, 1);
 	bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
-	writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "bottom_dif_gpu");
+	writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "bn_bottom_dif_gpu");
 
 	Caffe::set_mode(Caffe::Brew::CPU);
 	printf("gpu_checked[%s][%d]\n", __FILE__, __LINE__);

@@ -74,8 +74,11 @@ protected:
 
 	void backward_topDif2temp_cpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
 	void backward_temp2BottomDif_cpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
+	void backward_topDif2temp_gpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
+	void backward_temp2BottomDif_gpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
 
 	void top_2_buf(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top, Blob<Dtype> &buf);
+	void top_2_buf_gpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top, Blob<Dtype> &buf);
 
 protected:
   Blob<Dtype> mean_, variance_;

@@ -193,7 +193,160 @@ namespace caffe {
 	void BNHashLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 		const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 	{
+		const Dtype* top_diff = top[HASH_DATA_BLOB]->gpu_diff();
+		Dtype* bottom_diff = bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
+		const int total_defNum = temp_.shape(1);
+		const Dtype mean_div = Dtype(1) / Dtype(total_defNum);
 
+		//convert top_dif to tmp
+		backward_topDif2temp_gpu(bottom, top);
+		if (use_global_stats_)
+		{
+			// replicate inv_variance to input size
+			caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+				(Dtype)1, inv_sqrt_var_.gpu_data(), mean_multiplier_.gpu_data(), (Dtype)0,
+				temp2_.mutable_gpu_data());
+			caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp2_.gpu_data(), temp_.mutable_gpu_data());
+			backward_temp2BottomDif_gpu(bottom, top);
+			return;
+		}
+
+
+		// if Y = (X-mean(X))/(sqrt(var(X)+eps)), then
+		//
+		// dE(Y)/dX =
+		//   (dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y)
+		//     ./ sqrt(var(X) + eps)
+		//
+		// where \cdot and ./ are hadamard product and elementwise division,
+		// respectively, dE/dY is the top diff, and mean/var/sum are all computed
+		// along all dimensions except the channels dimension.  In the above
+		// equation, the operations allow for expansion (i.e. broadcast) along all
+		// dimensions except the channels dimension where required.
+		// --------------------------------------------------------
+		// If disable_vairance is set, the derivative change to
+		// dE(Y)/dX = dE/dY - mean(dE/dY)
+		// If disable_mean is set, derivative becomes
+		// dE(Y)/dX =
+		//   (dE/dY - mean(dE/dY \cdot Y) \cdot Y)
+		//     ./ sqrt(var(X) + eps)
+
+		//step1. mean(dE/dY \cdot Y)
+		top_2_buf_gpu(bottom, top, temp2_);	//convert Y to temp2_
+		//dE/dY \cdot Y; // NOTE: here temp_ is modified
+		caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp2_.gpu_data(), temp_.mutable_gpu_data());
+		//mean
+		caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
+			temp_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
+
+		//step2. mean(dE/dY \cdot Y) \cdot Y
+		//reshape mean to input size
+		caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+			(Dtype)1, mean_.gpu_data(), mean_multiplier_.gpu_data(), (Dtype)0,
+			temp_.mutable_gpu_data());
+		// mean(dE/dY \cdot Y) \cdot Y
+		caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp2_.gpu_data(), temp2_.mutable_gpu_data());
+
+		//step3. dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y
+		//convert top_dif to tmp
+		backward_topDif2temp_gpu(bottom, top);
+		//mean(dE/dY)
+		caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
+			temp_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
+
+		//dE/dY - mean(dE/dY \cdot Y) \cdot Y
+		caffe_gpu_sub(temp_.count(), temp_.gpu_data(), temp2_.gpu_data(), temp_.mutable_gpu_data());
+
+		//-= mean(dE/dY)
+		caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_,
+			total_defNum, 1, (Dtype)-1, mean_.gpu_data(), mean_multiplier_.gpu_data(),
+			(Dtype)1, temp_.mutable_gpu_data());
+
+		//step4. (dE/dY - mean(dE/dY) - mean(dE/dY \cdot Y) \cdot Y) / sqrt(var(X) + eps)
+		// replicate inv_variance to input size
+		caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+			(Dtype)1, inv_sqrt_var_.gpu_data(), mean_multiplier_.gpu_data(), (Dtype)0,
+			temp2_.mutable_gpu_data());
+		caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp2_.gpu_data(), temp_.mutable_gpu_data());
+		backward_temp2BottomDif_gpu(bottom, top);
+	}
+
+	template <typename Dtype>
+	void BNHashLayer<Dtype>::backward_topDif2temp_gpu(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top)
+	{
+		const Dtype *hash_dif = top[HASH_DATA_BLOB]->gpu_diff();
+		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
+		Dtype* temp = temp_.mutable_gpu_data();
+		const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+		const int total_def_num = temp_.shape(1);
+		for (int i = 0; i < batch_num; ++i)
+		{
+			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+			const int m = m_bar * m_bar * m_bar;
+
+			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+				hash_dif, validPos, m_bar, channels_, def_num, total_def_num, temp
+				);
+
+			//to next hash
+			hash_dif += m * channels_;
+			validPos += m;
+			temp += def_num;
+		}
+	}
+
+	template <typename Dtype>
+	void BNHashLayer<Dtype>::backward_temp2BottomDif_gpu(const vector<Blob<Dtype>*>& bottom,
+		const vector<Blob<Dtype>*>& top)
+	{
+		Dtype *hash_dif = bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
+		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
+		const Dtype* temp = temp_.gpu_data();
+		const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+		const int total_def_num = temp_.shape(1);
+		for (int i = 0; i < batch_num; ++i)
+		{
+			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+			const int m = m_bar * m_bar * m_bar;
+
+			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+				hash_dif, validPos, m_bar, channels_, def_num, total_def_num, temp
+				);
+
+			//to next hash
+			hash_dif += m * channels_;
+			validPos += m;
+			temp += def_num;
+		}
+	}
+
+	template <typename Dtype>
+	void BNHashLayer<Dtype>::top_2_buf_gpu(const vector<Blob<Dtype>*>& bottom, 
+		const vector<Blob<Dtype>*>& top, Blob<Dtype> &buf)
+	{
+		const Dtype *hash = top[HASH_DATA_BLOB]->gpu_data();
+		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
+		Dtype* buf_ptr = buf.mutable_gpu_data();
+		const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+		const int total_def_num = buf.shape(1);
+		for (int i = 0; i < batch_num; ++i)
+		{
+			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
+			const int m = m_bar * m_bar * m_bar;
+
+			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+				hash, validPos, m_bar, channels_, def_num, total_def_num, buf_ptr
+				);
+
+			//to next hash
+			hash += m * channels_;
+			validPos += m;
+			buf_ptr += def_num;
+		}
 	}
 
 	INSTANTIATE_LAYER_GPU_FUNCS(BNHashLayer);
