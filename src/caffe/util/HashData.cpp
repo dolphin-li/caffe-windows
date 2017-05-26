@@ -340,6 +340,38 @@ void hash_2_dense(const float *hash_data, const PACKED_POSITION *position_tags, 
 }
 
 
+void dense_2_hash(float *hash_data, const PACKED_POSITION *position_tags, const unsigned char *m_offset_data,
+	int m_bar, int r_bar, int channels,
+	const float *dense_data, int res)
+{
+	int res3 = res*res*res;
+	int m = m_bar * m_bar * m_bar;
+	memset(hash_data, 0, sizeof(float)*m * channels);
+
+	float *hash_ptr = hash_data;
+	for (int i = 0; i < m; i++)
+	{
+		if (!ishashVoxelDefined(&position_tags[i]))
+		{
+			hash_ptr++;
+			continue;
+		}
+		int x, y, z;
+		xyz_from_pack(position_tags[i], x, y, z);
+		int ni = NXYZ2I(x, y, z, res, res*res);
+		const float *cur_dense_ptr = dense_data + ni;
+		float *cur_hash_ptr = hash_ptr;
+		for (int c = 0; c < channels; c++)
+		{
+			*cur_hash_ptr = *cur_dense_ptr;
+			cur_dense_ptr += res3;
+			cur_hash_ptr += m;
+		}
+		hash_ptr++;
+	}
+}
+
+
 
 void topMask_2_dense(const int *top_mask, const PACKED_POSITION *top_posTags, const unsigned char *top_offset,
 	int top_m_bar, int top_r_bar, int channels, int top_res,

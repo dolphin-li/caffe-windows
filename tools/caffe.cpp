@@ -21,6 +21,7 @@ namespace bp = boost::python;
 #include "caffe/layers/conv_hash_layer.hpp"
 #include "caffe/layers/pool_hash_layer.hpp"
 #include "caffe/layers/bn_hash_layer.hpp"
+#include "caffe/layers/hash_2_dense_layer.hpp"
 //**************************//
 using caffe::Blob;
 using caffe::Caffe;
@@ -988,6 +989,62 @@ void test_bn_layer_backward(caffe::BNHashLayer<float> *pBNLayer, const std::vect
 #endif
 }
 
+
+
+caffe::Hash2DenseLayer<float> *test_hash2dense_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
+{
+	const int top_blob_num = 1;
+	top.resize(top_blob_num);	
+	for (int i = 0; i < top_blob_num; i++)
+	{
+		top[i] = new Blob<float>();
+	}
+
+	int channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+
+	caffe::LayerParameter hash2dense_layer_param;
+	hash2dense_layer_param.set_type("Hash2Dense");
+
+	caffe::Hash2DenseLayer<float> *hash2dense_layer = new caffe::Hash2DenseLayer<float>(hash2dense_layer_param);
+	hash2dense_layer->SetUp(bottom, top);
+	hash2dense_layer->Forward(bottom, top);
+
+	//save to HDF5 for debug
+	const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	BatchHashData bottom_batch;
+	blobs_2_batchHash(bottom, bottom_batch);
+	bottom_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "H2D_bottom");
+
+	//writeDense_2_HF5(top[0]->cpu_data(), top[0]->shape(0), top[0]->shape(2), top[0]->shape(1), "hash2dense.hf5");
+	return hash2dense_layer;
+}
+
+void test_hash2dense_layer_backward(caffe::Hash2DenseLayer<float> *hash2dense_layer,
+	const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
+{
+	//random init top dif
+	float *top_dif = (float*)top[0]->mutable_cpu_diff();
+	float invRand = 1.f / (float)RAND_MAX;
+	for (int i=0;i<top[0]->count();i++)
+	{
+		//top_dif[i] = (float)rand()*invRand;
+		top_dif[i] = (float)top[0]->cpu_data()[i];
+	}
+	
+	std::vector<bool> bp_flag; //no use
+	hash2dense_layer->Backward(top, bp_flag, bottom);
+
+	////save to HDF5 for debug
+	//BatchHashData bottom_dif_batch;
+	//blobs_2_batchHash(bottom, bottom_dif_batch, 1);
+	//bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	//int dense_res = top[0]->shape(2);
+	//writeBatchHash_2_denseFiles(bottom_dif_batch, dense_res, "H2D_bottom_dif");
+}
+
+
+
 void test_hash()
 {
 	printf("Testing hash data layer...\n");
@@ -1071,6 +1128,22 @@ void test_hash()
 
 	caffe::BNHashLayer<float> *pBNLayer = test_bn_layer_forward(bn_bottom, bn_top);
 	test_bn_layer_backward(pBNLayer, bn_bottom, bn_top);
+
+	/****************Hash2Dense layer*****************************/
+	std::vector<Blob<float> *> h2d_top;
+	std::vector<Blob<float>*> h2d_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
+	h2d_bottom[HASH_DATA_BLOB] = bn_top[HASH_DATA_BLOB];
+	h2d_bottom[CHANNEL_BLOB] = bn_top[CHANNEL_BLOB];
+	h2d_bottom[DENSE_RES_BLOB] = bn_top[DENSE_RES_BLOB];
+	h2d_bottom[OFFSET_BLOB] = bn_bottom[OFFSET_BLOB];
+	h2d_bottom[POSTAG_BLOB] = bn_bottom[POSTAG_BLOB];
+	h2d_bottom[M_BAR_BLOB] = bn_bottom[M_BAR_BLOB];
+	h2d_bottom[R_BAR_BLOB] = bn_bottom[R_BAR_BLOB];
+	h2d_bottom[DEFNUM_BLOB] = bn_bottom[DEFNUM_BLOB];
+	h2d_bottom[VALID_POS_BLOB] = bn_bottom[VALID_POS_BLOB];
+
+	caffe::Hash2DenseLayer<float> *pH2DLayer = test_hash2dense_layer_forward(h2d_bottom, h2d_top);
+	test_hash2dense_layer_backward(pH2DLayer, h2d_bottom, h2d_top);
 
 	//do not handle memory, just for testing...
 	printf("\n");

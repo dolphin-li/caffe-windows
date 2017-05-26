@@ -141,7 +141,9 @@ void topMask_2_dense(const int *top_mask, const PACKED_POSITION *top_posTags, co
 	int top_m_bar, int top_r_bar, int channels, int top_res,
 	const PACKED_POSITION *bottom_posTags, int bottom_res,
 	int *dense_idx);
-
+void dense_2_hash(float *hash_data, const PACKED_POSITION *position_tags, const unsigned char *m_offset_data,
+	int m_bar, int r_bar, int channels,
+	const float *dense_data, int res);
 
 _inline int NXYZ2I(int nx, int ny, int nz, int n, int n2)
 {
