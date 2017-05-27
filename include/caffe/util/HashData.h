@@ -167,6 +167,9 @@ _inline void Hash(int nx, int ny, int nz, int& mx, int& my, int& mz,
 void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashData &batch_hash, int dif_flag = 0);
 
 
+// when paralleling voxels * channels, we should banlance between hash computation with parallization
+// so we should not parallel for all channels, we need to compute a group of channels instead.
+#define CHANNEL_GROUP_NUM 8
 #ifdef __CUDACC__
 __device__ __host__ inline void xyz_from_pack_g(PACKED_POSITION packed_val, int &x, int &y, int &z)
 {
@@ -178,16 +181,31 @@ __device__ __host__ inline void xyz_from_pack_g(PACKED_POSITION packed_val, int 
 	z = (packed_z & 0xFFFF0000) >> 16;
 }
 
+__device__ __host__ inline int3 xyz_from_pack_g(PACKED_POSITION packed_val)
+{
+	int3 r;
+	xyz_from_pack_g(packed_val, r.x, r.y, r.z);
+	return r;
+}
+
+__device__ __host__ inline bool ishashVoxelDefined_g(int3 p)
+{
+	return !(p.x == INVALID_POSTAG || p.y == INVALID_POSTAG || p.z == INVALID_POSTAG);
+}
+
 __device__ __host__ inline bool ishashVoxelDefined_g(PACKED_POSITION pos_tag)
 {
-	int x, y, z;
-	xyz_from_pack_g(pos_tag, x, y, z);
-	return !(x == INVALID_POSTAG || y == INVALID_POSTAG || z == INVALID_POSTAG);
+	return ishashVoxelDefined_g(xyz_from_pack_g(pos_tag));
 }
 
 __device__ __host__ inline int NXYZ2I_g(int nx, int ny, int nz, int n, int n2)
 {
 	return nz*n2 + ny*n + nx;
+};
+
+__device__ __host__ inline int NXYZ2I_g(int nx, int ny, int nz, int n)
+{
+	return (nz*n + ny)*n + nx;
 };
 
 __device__ __host__ inline void Hash_g(int nx, int ny, int nz, int& mx, int& my, int& mz,
@@ -202,6 +220,14 @@ __device__ __host__ inline void Hash_g(int nx, int ny, int nz, int& mx, int& my,
 	mx = (nx + offset[0]) % m_bar;
 	my = (ny + offset[1]) % m_bar;
 	mz = (nz + offset[2]) % m_bar;
+}
+
+__device__ __host__ inline int3 Hash_g(int nx, int ny, int nz,
+	const unsigned char *offset_data, int m_bar, int r_bar)
+{
+	int3 r;
+	Hash_g(nx, ny, nz, r.x, r.y, r.z, offset_data, m_bar, r_bar, r_bar*r_bar);
+	return r;
 }
 #endif
 

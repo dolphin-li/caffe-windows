@@ -18,68 +18,48 @@ namespace caffe {
 		const int channels, 
 		const int cols,
 		const int dense_res, 
+		const int nThreads,
 		float* col_buff)
 	{
 		const int m = m_bar * m_bar * m_bar;
-		const int kernel_dim = kernel_shape.x * kernel_shape.y * kernel_shape.z;
-		const int r2 = r_bar * r_bar;
-		const int m2 = m_bar * m_bar;
-		const int cross_channel_stride = cols * kernel_dim;
+		const int cross_channel_stride = cols * kernel_shape.x * kernel_shape.y * kernel_shape.z;
 
-		CUDA_KERNEL_LOOP(valid_v, cols)
+		CUDA_KERNEL_LOOP(valid_v_threads, nThreads)
 		{
+			const int group = valid_v_threads / cols;
+			const int valid_v = valid_v_threads - group * cols;
+			const int firstChannel = group * CHANNEL_GROUP_NUM;
+			const int nChannels = min(firstChannel + CHANNEL_GROUP_NUM, channels) - firstChannel;
 			const int v = valid_positions[valid_v];
-			if (!ishashVoxelDefined_g(position_tags[v]))
-				printf("error: valid given is non-valid: %d->%d\n", valid_v, v);
+			//if (!ishashVoxelDefined_g(position_tags[v]))
+			//	printf("error: valid given is non-valid: %d->%d\n", valid_v, v);
 
-			int cx, cy, cz;
-			xyz_from_pack_g(position_tags[v], cx, cy, cz);	//get the voxel position mapped to this hash
-			const int min_x = cx - (kernel_shape.x >> 1);
-			const int min_y = cy - (kernel_shape.y >> 1);
-			const int min_z = cz - (kernel_shape.z >> 1);
+			const int3 center = xyz_from_pack_g(position_tags[v]);	//get the voxel position mapped to this hash
+			const int min_x = center.x - (kernel_shape.x >> 1);
+			const int min_y = center.y - (kernel_shape.y >> 1);
+			const int min_z = center.z - (kernel_shape.z >> 1);
 
-			float *cur_row = col_buff + valid_v;
+			float *cur_row = col_buff + valid_v + firstChannel * cross_channel_stride;
+			const float* hash_ptr = hash_data + firstChannel * m;
 			for (int nz = min_z; nz < min_z + kernel_shape.z; nz++)
 			for (int ny = min_y; ny < min_y + kernel_shape.y; ny++)
-				for (int nx = min_x; nx < min_x + kernel_shape.x; nx++)
+				for (int nx = min_x; nx < min_x + kernel_shape.x; nx++, cur_row += cols)
 				{
+					for (int c = 0; c < nChannels; c++)
+						cur_row[c * cross_channel_stride] = 0;
 					if (nx < 0 || ny < 0 || nz < 0 || nx >= dense_res || ny >= dense_res || nz >= dense_res)
-					{
-						//just skip, as the values are inited as zeros
-						cur_row += cols;
 						continue;
-					}
+
 					//hash to get hash position
-					int mx, my, mz;
-					Hash_g(nx, ny, nz, mx, my, mz, offset_data, m_bar, r_bar, r2);
-					const int m_idx = NXYZ2I_g(mx, my, mz, m_bar, m2);
-
-					if (!ishashVoxelDefined_g(position_tags[m_idx]))	//the hash voxel is undefined
-					{
-						//just skip, as the values are inited as zeros
-						cur_row += cols;
+					const int3 mxyz = Hash_g(nx, ny, nz, offset_data, m_bar, r_bar);
+					const int m_idx = NXYZ2I_g(mxyz.x, mxyz.y, mxyz.z, m_bar);
+					const int3 stored = xyz_from_pack_g(position_tags[m_idx]);
+					if (!ishashVoxelDefined_g(stored) || nx != stored.x || ny != stored.y || nz != stored.z)
 						continue;
-					}
-
-					int stored_x, stored_y, stored_z;
-					xyz_from_pack_g(position_tags[m_idx], stored_x, stored_y, stored_z);
-					if (nx != stored_x || ny != stored_y || nz != stored_z)	//the neighbor is an undefined voxel
-					{
-						//just skip, as the values are inited as zeros
-						cur_row += cols;
-						continue;
-					}
 
 					//fill the value at cur_row and corresponding channels
-					const float *hash_ptr = hash_data + m_idx;
-					float *fill_row_ptr = cur_row;
-					for (int c = 0; c < channels; c++)
-					{
-						*fill_row_ptr = *hash_ptr;
-						fill_row_ptr += cross_channel_stride;
-						hash_ptr += m;
-					}
-					cur_row += cols;
+					for (int c = 0; c < nChannels; c++)
+						cur_row[c * cross_channel_stride] = hash_ptr[c*m + m_idx];
 				} // end for xyz
 		} // end for cuda_kernel_loop
 	}
@@ -92,69 +72,27 @@ namespace caffe {
 		int m_bar, int r_bar, int channels, int defined_num,
 		int dense_res, float* col_buff)
 	{
-		//col is reception field: input_channels * KD * KH * KW; row: spatial domain
-		const int kernel_dim = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
-		const int rows = kernel_dim * channels;
-		const int cols = defined_num;
-		
-		//init vals to zero
-		cudaMemset(col_buff, 0, sizeof(float)*cols * rows);
+		const int nThreads = defined_num* ((channels + CHANNEL_GROUP_NUM-1) / CHANNEL_GROUP_NUM);
 
-		conv_hash2col_gpu_kernel << <CAFFE_GET_BLOCKS(cols), CAFFE_CUDA_NUM_THREADS >> > (
+		conv_hash2col_gpu_kernel << <CAFFE_GET_BLOCKS(nThreads), CAFFE_CUDA_NUM_THREADS >> > (
 			hash_data, offset_data, position_tags, valid_positions,
 			make_int3(kernel_shape[0], kernel_shape[1], kernel_shape[2]),
-			m_bar, r_bar, channels, cols, dense_res, col_buff
+			m_bar, r_bar, channels, defined_num, dense_res, nThreads, col_buff
 			);
-	
-		CHECK_EQ(cudaDeviceSynchronize(), CUDA_SUCCESS);
-
-#if 0
-		static int test_a = 0;
-		if (test_a++ == 0)
-		{
-			std::vector<float> tmp_col(rows*cols);
-			caffe_copy(rows*cols, col_buff, tmp_col.data());
-			FILE* pFile = fopen("col_buf_gpu.txt", "w");
-			for (int r = 0; r < rows; r++)
-			{
-				for (int c = 0; c < cols; c++)
-					fprintf(pFile, "%f ", tmp_col[r*cols + c]);
-				fprintf(pFile, "\n");
-			}
-			fclose(pFile);
-
-			pFile = fopen("col_buf_valid_pos_gpu.txt", "w");
-			std::vector<int> tmp_valid(defined_num);
-			caffe_copy(defined_num, valid_positions, tmp_valid.data());
-			for (int i = 0; i < defined_num; i++)
-				fprintf(pFile, "%d\n", tmp_valid[i]);
-			fclose(pFile);
-		}
-#endif
-
 		return 1;
 	}
 
-	__global__ void conv_col2hash_gpu_kernel(const PACKED_POSITION *pos_tags, 
+	__global__ void conv_col2hash_gpu_kernel(
 		const int* valid_positions, float *out_hash_data,
-		const int m_bar, const int out_channels, const int defined_num, const float* col_buff)
+		const int m, const int out_channels_mul_defined_num, 
+		const int defined_num, const float* col_buff)
 	{
-		const int m = m_bar * m_bar * m_bar;
-		CUDA_KERNEL_LOOP(valid_v, defined_num)
+		CUDA_KERNEL_LOOP(valid_v_channels, out_channels_mul_defined_num)
 		{
+			const int channel = valid_v_channels / defined_num;
+			const int valid_v = valid_v_channels - channel * defined_num;
 			const int v = valid_positions[valid_v];
-			//if the hash voxel is undefined, skip
-			if (!ishashVoxelDefined_g(pos_tags[v]))
-				printf("error: valid given is non-valid: %d->%d\n", valid_v, v);
-
-			float *cur_out_ptr = out_hash_data + v;
-			const float *cur_row_ptr = col_buff + valid_v;
-			for (int c = 0; c < out_channels; c++)
-			{
-				*cur_out_ptr = *cur_row_ptr;
-				cur_out_ptr += m;
-				cur_row_ptr += defined_num;
-			}
+			out_hash_data[channel*m + v] = col_buff[channel*defined_num + valid_v];
 		}
 	}
 
@@ -164,10 +102,8 @@ namespace caffe {
 	{
 		//col is reception field: input_channels * KD * KH * KW; row: spatial domain
 		const int m = m_bar * m_bar * m_bar;
-		//to be safe, init out to zero
-		cudaMemset(out_hash_data, 0, sizeof(float)*m*out_channels);
-		conv_col2hash_gpu_kernel << <CAFFE_GET_BLOCKS(defined_num), CAFFE_CUDA_NUM_THREADS >> > (
-			pos_tags, valid_positions, out_hash_data, m_bar, out_channels, defined_num, col_buff
+		conv_col2hash_gpu_kernel << <CAFFE_GET_BLOCKS(defined_num * out_channels), CAFFE_CUDA_NUM_THREADS >> > (
+			valid_positions, out_hash_data, m, out_channels*defined_num, defined_num, col_buff
 			);
 		return 1;
 	}

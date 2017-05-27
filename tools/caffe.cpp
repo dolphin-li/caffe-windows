@@ -605,7 +605,18 @@ caffe::ConvHashLayer<float> *test_hash_conv_layer_forward(const std::vector<Blob
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
-	hash_conv_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for(int i = 0; i < nEvals; i++)
+		hash_conv_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	timer.Stop();
+	printf("convolution time[res=%d, num=%d, channel=%d, %d]: %f seconds\n", 
+		dense_res, bottom[M_BAR_BLOB]->shape()[0], 
+		channels, num_output,
+		timer.Seconds() / float(nEvals));
 	structed_top[HASH_DATA_BLOB] = gpu_top[HASH_DATA_BLOB];
 	blobs_2_batchHash(structed_top, top_batch);
 	top_batch.m_channels = num_output;

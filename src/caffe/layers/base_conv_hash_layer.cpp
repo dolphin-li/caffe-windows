@@ -193,7 +193,7 @@ void BaseConvHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& b
 	}
 	std::vector<int> hash_data_shape(1, batch_hash_size * top_channels);
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
-	memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
+	//memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
 
 	std::vector<int> scalar_shape(1, 1);
 	top[CHANNEL_BLOB]->Reshape(scalar_shape);
@@ -253,7 +253,7 @@ void BaseConvHashLayer<Dtype>::reshape_colBuf(const vector<Blob<Dtype>*>& bottom
 	col_buf_shape.push_back(input_channels * filter_size);
 	col_buf_shape.push_back(max_defined_size);
 	col_buffer_.Reshape(col_buf_shape);
-	memset(col_buffer_.mutable_cpu_data(), 0, sizeof(Dtype)*input_channels * filter_size * max_defined_size);
+	//memset(col_buffer_.mutable_cpu_data(), 0, sizeof(Dtype)*input_channels * filter_size * max_defined_size);
 
 	//also reshape the out col buf
 	const int out_channels = num_output_;
@@ -261,15 +261,24 @@ void BaseConvHashLayer<Dtype>::reshape_colBuf(const vector<Blob<Dtype>*>& bottom
 	out_colBuf_shape.push_back(out_channels);
 	out_colBuf_shape.push_back(max_defined_size);
 	out_col_buffer_.Reshape(out_colBuf_shape);
-	memset(out_col_buffer_.mutable_cpu_data(), 0, sizeof(Dtype)*out_channels * max_defined_size);
+	//memset(out_col_buffer_.mutable_cpu_data(), 0, sizeof(Dtype)*out_channels * max_defined_size);
 
 	//also reshape the bias multiplier
 	if (bias_term_) 
 	{
 		vector<int> bias_multiplier_shape(1, max_defined_size);
 		bias_multiplier_.Reshape(bias_multiplier_shape);
-		caffe_set(bias_multiplier_.count(), Dtype(1),
-			bias_multiplier_.mutable_cpu_data());
+		switch (Caffe::mode())
+		{
+		default:
+			break;
+		case Caffe::CPU:
+			caffe_set(bias_multiplier_.count(), Dtype(1), bias_multiplier_.mutable_cpu_data());
+			break;
+		case Caffe::GPU:
+			caffe_gpu_set(bias_multiplier_.count(), Dtype(1), bias_multiplier_.mutable_gpu_data());
+			break;
+		}
 	}
 }
 
