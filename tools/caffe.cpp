@@ -606,14 +606,14 @@ caffe::ConvHashLayer<float> *test_hash_conv_layer_forward(const std::vector<Blob
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
 	cudaThreadSynchronize();
-	const int nEvals = 1000;
+	const int nEvals = 100;
 	caffe::Timer timer;
 	timer.Start();
 	for(int i = 0; i < nEvals; i++)
 		hash_conv_layer->Forward(bottom, gpu_top);
 	cudaThreadSynchronize();
 	timer.Stop();
-	printf("convolution time[res=%d, num=%d, channel=%d, %d]: %f seconds\n", 
+	printf("convolution forward time[res=%d, num=%d, channel=%d, %d]: %f seconds\n", 
 		dense_res, bottom[M_BAR_BLOB]->shape()[0], 
 		channels, num_output,
 		timer.Seconds() / float(nEvals));
@@ -705,7 +705,14 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 
 #ifdef GPU_DEBUG
 	Caffe::set_mode(Caffe::Brew::GPU);
-	pConvLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		pConvLayer->Backward(top, bp_flag, bottom);
+	timer.Stop();
+	printf("convolution backward time: %f seconds\n", timer.Seconds() / float(nEvals));
 
 	blobs_2_batchHash(bottom, bottom_dif_batch, 1);
 	bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];

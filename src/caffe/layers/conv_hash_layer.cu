@@ -64,6 +64,7 @@ namespace caffe {
 		const float *top_hash_dif = (const float*)top[HASH_DATA_BLOB]->gpu_diff();
 		const float *bt_hash = (const float*)bottom[HASH_DATA_BLOB]->gpu_data();
 		float *bt_hash_dif = (float*)bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
+		cudaMemset(bt_hash_dif, 0, bottom[HASH_DATA_BLOB]->count()*sizeof(float));
 
 		const unsigned char* offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->gpu_data();
 		const PACKED_POSITION *posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->gpu_data();
@@ -87,9 +88,7 @@ namespace caffe {
 
 			// Bias gradient, if necessary.
 			if (this->bias_term_ && this->param_propagate_down_[1])
-			{
 				this->backward_gpu_bias((float*)bias_diff, (const float*)out_col_buffer_.gpu_data(), defNum);
-			}
 
 			if (this->param_propagate_down_[0])// || propagate_down[i]) 
 			{
@@ -123,7 +122,7 @@ namespace caffe {
 			top_hash_dif += m * num_output_;
 		}
 
-#if 1//for debug
+#if 0//for debug
 		writeDenseKernelDif_2_HF5("kernel_dif_gpu.hf5");
 		writeBiasDif_2_HF5("bias_dif_gpu.hf5");
 #endif
