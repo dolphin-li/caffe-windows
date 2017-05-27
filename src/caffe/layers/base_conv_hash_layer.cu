@@ -176,7 +176,7 @@ namespace caffe {
 					{
 						// TODO: how to parallel the operation instead of using automics?
 						//*hash_ptr += *fill_row_ptr;
-						atomicAdd(hash_ptr, *fill_row_ptr);	//accumulate the value to the hash
+						atomicAdd(hash_ptr_fill, *fill_row_ptr);	//accumulate the value to the hash
 						fill_row_ptr += cross_channel_stride;
 						hash_ptr_fill += m;
 					}
