@@ -12,17 +12,12 @@ namespace caffe {
 		int channels, int def_num, int total_def_num, Dtype *temp)
 	{
 		const int m = m_bar * m_bar * m_bar;
-		CUDA_KERNEL_LOOP(valid_v, def_num)
+		CUDA_KERNEL_LOOP(valid_v_channels, def_num * channels)
 		{
+			const int c = valid_v_channels / def_num;
+			const int valid_v = valid_v_channels - c * def_num;
 			const int v = validPos[valid_v];
-			const Dtype *hash_ptr = hash + v;
-			Dtype *temp_ptr = temp + valid_v;
-			for (int c = 0; c < channels; c++)
-			{
-				*temp_ptr = *hash_ptr;
-				hash_ptr += m;
-				temp_ptr += total_def_num;
-			}
+			temp[valid_v + c * total_def_num] = hash[v + c * m];
 		}
 	}
 
@@ -31,17 +26,12 @@ namespace caffe {
 		int channels, int def_num, int total_def_num, const Dtype *temp)
 	{
 		const int m = m_bar * m_bar * m_bar;
-		CUDA_KERNEL_LOOP(valid_v, def_num)
+		CUDA_KERNEL_LOOP(valid_v_channels, def_num*channels)
 		{
+			const int c = valid_v_channels / def_num;
+			const int valid_v = valid_v_channels - c * def_num;
 			const int v = validPos[valid_v];
-			Dtype *hash_ptr = hash + v;
-			const Dtype *temp_ptr = temp + valid_v;
-			for (int c = 0; c < channels; c++)
-			{
-				*hash_ptr = *temp_ptr;
-				hash_ptr += m;
-				temp_ptr += total_def_num;
-			}
+			hash[v + c * m] = temp[valid_v + c * total_def_num];
 		}
 	}
 
@@ -79,7 +69,7 @@ namespace caffe {
 			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
 			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 
-			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
 				hash, validPos, m_bar, channels_, def_num, total_def_num, temp
 				);
 
@@ -105,7 +95,7 @@ namespace caffe {
 			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
 			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 
-			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
 				hash, validPos, m_bar, channels_, def_num, total_def_num, temp
 				);
 
@@ -286,7 +276,7 @@ namespace caffe {
 			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 			const int m = m_bar * m_bar * m_bar;
 
-			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
 				hash_dif, validPos, m_bar, channels_, def_num, total_def_num, temp
 				);
 
@@ -312,7 +302,7 @@ namespace caffe {
 			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 			const int m = m_bar * m_bar * m_bar;
 
-			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
 				hash_dif, validPos, m_bar, channels_, def_num, total_def_num, temp
 				);
 
@@ -338,7 +328,7 @@ namespace caffe {
 			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 			const int m = m_bar * m_bar * m_bar;
 
-			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
+			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
 				hash, validPos, m_bar, channels_, def_num, total_def_num, buf_ptr
 				);
 
