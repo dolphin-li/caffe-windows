@@ -133,7 +133,6 @@ namespace caffe {
 		else
 		{
 			/********1. compute the mean EX for each channel *************/
-			cudaMemset(mean_.mutable_gpu_data(), 0, sizeof(Dtype)*channels_);
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div, 
 				temp_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
 		}
@@ -146,7 +145,6 @@ namespace caffe {
 		/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
 		if (!use_global_stats_)
 		{
-			cudaMemset(variance_.mutable_gpu_data(), 0, sizeof(Dtype)*channels_);
 			caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp_.gpu_data(), temp2_.mutable_gpu_data());
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, var_div,
 				temp2_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), variance_.mutable_gpu_data());
