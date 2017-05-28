@@ -9,6 +9,7 @@ typedef struct tag_PACKED_POSITION
 {
 	unsigned char _val[6];	//10 for X, 32 for Y, 54 for Z
 }PACKED_POSITION;
+typedef unsigned short VolumeIndexType;
 
 inline void pack_xyz(PACKED_POSITION &packed_val, int x, int y, int z)
 {
@@ -169,7 +170,7 @@ void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashD
 
 // when paralleling voxels * channels, we should banlance between hash computation with parallization
 // so we should not parallel for all channels, we need to compute a group of channels instead.
-#define CHANNEL_GROUP_NUM 64
+#define CHANNEL_GROUP_NUM 32
 #ifdef __CUDACC__
 __device__ __host__ inline void xyz_from_pack_g(PACKED_POSITION packed_val, int &x, int &y, int &z)
 {
@@ -207,6 +208,12 @@ __device__ __host__ inline int NXYZ2I_g(int nx, int ny, int nz, int n)
 {
 	return (nz*n + ny)*n + nx;
 };
+
+__device__ __host__ inline int NXYZ2I_g(int3 p, int n)
+{
+	return NXYZ2I_g(p.x, p.y, p.z, n);
+};
+
 
 __device__ __host__ inline void Hash_g(int nx, int ny, int nz, int& mx, int& my, int& mz,
 	const unsigned char *offset_data, int m_bar, int r_bar, int r2)

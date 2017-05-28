@@ -1153,6 +1153,10 @@ void test_hash()
 	conv_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	conv_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
 	conv_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
+	conv_bottom[VOLUME_IDX_BLOB] = data_top[VOLUME_IDX_BLOB];
+	conv_bottom[DEFNUM_SUM_BLOB] = data_top[DEFNUM_SUM_BLOB];
+	conv_bottom[M_SUM_BLOB] = data_top[M_SUM_BLOB];
+	conv_bottom[R_SUM_BLOB] = data_top[R_SUM_BLOB];
 
 	caffe::ConvHashLayer<float> *pConvLayer = test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, kernel_size);
 	test_hash_conv_layer_backward(pConvLayer, conv_bottom, conv_top);
@@ -1169,6 +1173,10 @@ void test_hash()
 	pool_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	pool_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
 	pool_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
+	pool_bottom[VOLUME_IDX_BLOB] = data_top[VOLUME_IDX_BLOB];
+	pool_bottom[DEFNUM_SUM_BLOB] = data_top[DEFNUM_SUM_BLOB];
+	pool_bottom[M_SUM_BLOB] = data_top[M_SUM_BLOB];
+	pool_bottom[R_SUM_BLOB] = data_top[R_SUM_BLOB];
 	//pool top struct
 	pool_bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE] = data_top[OFFSET_BLOB + HASH_STRUCTURE_SIZE];	//pool bottom struct
 	pool_bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE] = data_top[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
@@ -1176,6 +1184,10 @@ void test_hash()
 	pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE] = data_top[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE] = data_top[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE] = data_top[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[M_SUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[M_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[R_SUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[R_SUM_BLOB + HASH_STRUCTURE_SIZE];
 
 	caffe::PoolHashLayer<float> *pPoolLayer = test_pool_layer_forward(pool_bottom, pool_top, 2);
 	test_pool_layer_backward(pPoolLayer, pool_bottom, pool_top);
@@ -1192,6 +1204,10 @@ void test_hash()
 	bn_bottom[R_BAR_BLOB] = pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
 	bn_bottom[DEFNUM_BLOB] = pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
 	bn_bottom[VALID_POS_BLOB] = pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[VOLUME_IDX_BLOB] = pool_bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[DEFNUM_SUM_BLOB] = pool_bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[M_SUM_BLOB] = pool_bottom[M_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[R_SUM_BLOB] = pool_bottom[R_SUM_BLOB + HASH_STRUCTURE_SIZE];
 	//bn_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
 	//bn_bottom[CHANNEL_BLOB] = data_top[CHANNEL_BLOB];
 	//bn_bottom[DENSE_RES_BLOB] = data_top[DENSE_RES_BLOB];
@@ -1217,6 +1233,10 @@ void test_hash()
 	h2d_bottom[R_BAR_BLOB] = bn_bottom[R_BAR_BLOB];
 	h2d_bottom[DEFNUM_BLOB] = bn_bottom[DEFNUM_BLOB];
 	h2d_bottom[VALID_POS_BLOB] = bn_bottom[VALID_POS_BLOB];
+	h2d_bottom[VOLUME_IDX_BLOB] = bn_bottom[VOLUME_IDX_BLOB];
+	h2d_bottom[DEFNUM_SUM_BLOB] = bn_bottom[DEFNUM_SUM_BLOB];
+	h2d_bottom[M_SUM_BLOB] = bn_bottom[M_SUM_BLOB];
+	h2d_bottom[R_SUM_BLOB] = bn_bottom[R_SUM_BLOB];
 
 	caffe::Hash2DenseLayer<float> *pH2DLayer = test_hash2dense_layer_forward(h2d_bottom, h2d_top);
 	test_hash2dense_layer_backward(pH2DLayer, h2d_bottom, h2d_top);
