@@ -723,7 +723,7 @@ int conv_hash2col_cpu(const float* hash_data, const unsigned char *offset_data, 
 		exit(0);
 	}
 
-	printf("col buffer size <%d, %d>\n", rows, counter);
+	//printf("col buffer size <%d, %d>\n", rows, counter);
 
 
 	return 1;
@@ -908,7 +908,7 @@ int bottom_col2hash_cpu(float* hash_data, const unsigned char *offset_data, cons
 		exit(0);
 	}
 
-	printf("col buffer size <%d, %d>\n", rows, counter);
+	//printf("col buffer size <%d, %d>\n", rows, counter);
 
 
 	return 1;

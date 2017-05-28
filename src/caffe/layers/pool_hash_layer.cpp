@@ -79,7 +79,7 @@ void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& botto
 {
 	// Configure output channels and groups.
 	channels_ = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
-	printf("************Pooling layer: input channels %d*******\n", channels_);
+	//printf("************Pooling layer: input channels %d*******\n", channels_);
 	CHECK_GT(channels_, 0);
 
 	const Blob<Dtype> *bottom_m_bar_blob = bottom[M_BAR_BLOB];
@@ -106,7 +106,7 @@ void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& botto
 	}
 	std::vector<int> hash_data_shape(1, batch_hash_size * top_channels);
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
-	memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
+	//memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
 
 	//also reshape max_idx_
 	if (this->layer_param_.pooling_param().pool() == PoolingParameter_PoolMethod_MAX)

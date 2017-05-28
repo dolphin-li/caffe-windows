@@ -169,7 +169,7 @@ void blobs_2_batchHash(const std::vector<caffe::Blob<float>*>& blobs, BatchHashD
 
 // when paralleling voxels * channels, we should banlance between hash computation with parallization
 // so we should not parallel for all channels, we need to compute a group of channels instead.
-#define CHANNEL_GROUP_NUM 8
+#define CHANNEL_GROUP_NUM 64
 #ifdef __CUDACC__
 __device__ __host__ inline void xyz_from_pack_g(PACKED_POSITION packed_val, int &x, int &y, int &z)
 {

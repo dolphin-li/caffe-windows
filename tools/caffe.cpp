@@ -606,7 +606,7 @@ caffe::ConvHashLayer<float> *test_hash_conv_layer_forward(const std::vector<Blob
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
 	cudaThreadSynchronize();
-	const int nEvals = 100;
+	const int nEvals = 1000;
 	caffe::Timer timer;
 	timer.Start();
 	for(int i = 0; i < nEvals; i++)
@@ -711,6 +711,7 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 	timer.Start();
 	for (int i = 0; i < nEvals; i++)
 		pConvLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
 	timer.Stop();
 	printf("convolution backward time: %f seconds\n", timer.Seconds() / float(nEvals));
 
@@ -755,7 +756,18 @@ caffe::PoolHashLayer<float> *test_pool_layer_forward(const std::vector<Blob<floa
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
-	pool_hash_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		pool_hash_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	timer.Stop();
+	const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	printf("pooling forward time[res=%d, num=%d, channel=%d]: %f seconds\n",
+		dense_res, bottom[M_BAR_BLOB]->shape()[0], channels,
+		timer.Seconds() / float(nEvals));
 	GPU_CPU_COMPARE(top, gpu_top);
 	Caffe::set_mode(Caffe::Brew::CPU);
 	release_blobs(gpu_top);
@@ -823,7 +835,15 @@ void test_pool_layer_backward(caffe::PoolHashLayer<float> *pPoolLayer, const std
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto cpu_bottom = create_blobs(bottom.size(), &bottom, true);
-	pPoolLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		pPoolLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	timer.Stop();
+	printf("polling backward time: %f seconds\n", timer.Seconds() / float(nEvals));
 	GPU_CPU_COMPARE(cpu_bottom, bottom);
 	Caffe::set_mode(Caffe::Brew::CPU);
 	release_blobs(cpu_bottom);
@@ -1102,7 +1122,7 @@ void test_hash()
 	test_hash_data_layer_forward(data_top);
 
 	/*****************Conv layer***************************/
-	const int num_output = 10;
+	const int num_output = 100;
 	const int kernel_size = 3;
 	std::vector<Blob<float> *> conv_top;
 	std::vector<Blob<float>*> conv_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);

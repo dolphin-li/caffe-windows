@@ -19,6 +19,7 @@ namespace caffe {
 		const int cols,
 		const int dense_res, 
 		const int nThreads,
+		const int channelPerGroup,
 		float* col_buff)
 	{
 		const int m = m_bar * m_bar * m_bar;
@@ -28,8 +29,8 @@ namespace caffe {
 		{
 			const int group = valid_v_threads / cols;
 			const int valid_v = valid_v_threads - group * cols;
-			const int firstChannel = group * CHANNEL_GROUP_NUM;
-			const int nChannels = min(firstChannel + CHANNEL_GROUP_NUM, channels) - firstChannel;
+			const int firstChannel = group * channelPerGroup;
+			const int nChannels = min(firstChannel + channelPerGroup, channels) - firstChannel;
 			const int v = valid_positions[valid_v];
 			//if (!ishashVoxelDefined_g(position_tags[v]))
 			//	printf("error: valid given is non-valid: %d->%d\n", valid_v, v);
@@ -72,12 +73,14 @@ namespace caffe {
 		int m_bar, int r_bar, int channels, int defined_num,
 		int dense_res, float* col_buff)
 	{
-		const int nThreads = defined_num* ((channels + CHANNEL_GROUP_NUM-1) / CHANNEL_GROUP_NUM);
+		const int groups = (channels + CHANNEL_GROUP_NUM - 1) / CHANNEL_GROUP_NUM;
+		const int nThreads = defined_num* groups;
+		const int channelPerGroup = (channels + groups - 1) / groups;
 
 		conv_hash2col_gpu_kernel << <CAFFE_GET_BLOCKS(nThreads), CAFFE_CUDA_NUM_THREADS >> > (
 			hash_data, offset_data, position_tags, valid_positions,
 			make_int3(kernel_shape[0], kernel_shape[1], kernel_shape[2]),
-			m_bar, r_bar, channels, defined_num, dense_res, nThreads, col_buff
+			m_bar, r_bar, channels, defined_num, dense_res, nThreads, channelPerGroup, col_buff
 			);
 		return 1;
 	}
@@ -128,12 +131,20 @@ namespace caffe {
 		return 1;
 	}
 
-	__global__ void bottom_col2hash_gpu_kernel(float* hash_data,
+	__global__ void bottom_col2hash_gpu_kernel(
+		float* hash_data,
 		const unsigned char *offset_data,
 		const PACKED_POSITION *position_tags,
-		const int* valid_positions, const int3 kernel_shape,	//D, H, W
-		int m_bar, int r_bar, int channels, int defined_num,
-		int dense_res, int nThreads, const float* col_buff)
+		const int* valid_positions, 
+		const int3 kernel_shape,	//D, H, W
+		const int m_bar, 
+		const int r_bar, 
+		const int channels, 
+		const int defined_num,
+		const int dense_res, 
+		const int nThreads, 
+		const int channelPerGroup,
+		const float* col_buff)
 	{
 		//col is reception field: input_channels * KD * KH * KW; row: spatial domain
 		const int m = m_bar * m_bar * m_bar;
@@ -143,8 +154,8 @@ namespace caffe {
 		{
 			const int group = valid_v_threads / defined_num;
 			const int valid_v = valid_v_threads - group * defined_num;
-			const int firstChannel = group * CHANNEL_GROUP_NUM;
-			const int nChannels = min(firstChannel + CHANNEL_GROUP_NUM, channels) - firstChannel;
+			const int firstChannel = group * channelPerGroup;
+			const int nChannels = min(firstChannel + channelPerGroup, channels) - firstChannel;
 			const int v = valid_positions[valid_v];
 
 			//get the real voxel position from the position tag
@@ -189,11 +200,13 @@ namespace caffe {
 		int m_bar, int r_bar, int channels, int defined_num,
 		int dense_res, const float* col_buff)
 	{
-		const int nThreads = defined_num* ((channels + CHANNEL_GROUP_NUM - 1) / CHANNEL_GROUP_NUM);
+		const int groups = (channels + CHANNEL_GROUP_NUM - 1) / CHANNEL_GROUP_NUM;
+		const int nThreads = defined_num* groups;
+		const int channelPerGroup = (channels + groups - 1) / groups;
 		bottom_col2hash_gpu_kernel << <CAFFE_GET_BLOCKS(nThreads), CAFFE_CUDA_NUM_THREADS >> > (
 			hash_data, offset_data, position_tags, valid_positions, 
 			make_int3(kernel_shape[0], kernel_shape[1], kernel_shape[2]), m_bar,
-			r_bar, channels, defined_num, dense_res, nThreads, col_buff
+			r_bar, channels, defined_num, dense_res, nThreads, channelPerGroup, col_buff
 			);
 		return 1;
 	}
