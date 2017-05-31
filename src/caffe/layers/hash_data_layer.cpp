@@ -503,9 +503,9 @@ template <typename Dtype>
 void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   const int batch_size = this->layer_param_.hash_data_param().batch_size();
-
-  LOG(INFO) << "current file: " << current_file_ << " " << file_permutation_[current_file_]
-	  << "current_row_: " << current_row_;
+  //current_row_ = 4096;
+  //LOG(INFO) << "current file: " << current_file_ << " " << file_permutation_[current_file_]
+	 // << "current_row_: " << current_row_;
   for (int i = 0; i < batch_size; ++i) {
     while (Skip()) {
       Next();

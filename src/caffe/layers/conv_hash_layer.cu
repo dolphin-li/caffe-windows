@@ -27,6 +27,11 @@ namespace caffe {
 			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
 			float *out_buf = (float*)out_col_buffer_.mutable_gpu_data();
 
+			// LDP: why empty volume??? bugs???
+			// current_row_ == 4096, batch_idx=7
+			if (defNum == 0)
+				continue;
+
 			forward_gpu_gemm(batch_hash_ptr, batch_offset_ptr, batch_posTag_ptr, batch_validPos_ptr, m_bar, r_bar,
 				channels_, num_output_, defNum, dense_res, out_buf);
 
@@ -82,6 +87,9 @@ namespace caffe {
 			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
 			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
 			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+
+			if (defNum == 0)
+				continue;
 
 			//convert top dif to out_col_buf
 			top_hash2col_gpu(top_hash_dif, posTag_ptr, validPos_ptr, m_bar,

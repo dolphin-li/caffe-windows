@@ -544,6 +544,7 @@ void BaseConvHashLayer<Dtype>::forward_gpu_gemm(const float *bottom_hash, const 
 	conv_hash2col_gpu(bottom_hash, bottom_offset, bottom_posTag, bottom_validPos, 
 		kernel_shape, m_bar, r_bar, bottom_channels,
 		defined_voxel_num, dense_res, (float*)col_buffer_.mutable_gpu_data());
+
 	const int kernel_size = kernel_shape[0] * kernel_shape[1] * kernel_shape[2];
 	caffe_gpu_gemm<float>(CblasNoTrans, CblasNoTrans, top_channels, defined_voxel_num, bottom_channels*kernel_size,
 		1.f, (const float*)this->blobs_[0]->gpu_data(), (const float*)col_buffer_.gpu_data(),

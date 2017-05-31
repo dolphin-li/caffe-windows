@@ -108,6 +108,8 @@ namespace caffe {
 		//const Dtype var_div = Dtype(1) / Dtype(std::max(1, total_defNum - 1));
 		const Dtype var_div = mean_div;	//will be bias-corrected when adding to blob[1]
 
+		CHECK_GT(total_defNum, 0);
+
 		// prepare temp_ array
 		forward_hash2temp_gpu(bottom, top);
 
