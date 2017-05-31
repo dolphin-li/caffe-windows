@@ -98,6 +98,10 @@ namespace caffe {
 	void BNHashLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 		const vector<Blob<Dtype>*>& top)
 	{
+		//forward channel and dense res
+		top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
+		top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
+
 		//total num
 		const int total_defNum = temp_.shape(1);
 		const Dtype mean_div = Dtype(1) / Dtype(total_defNum);
@@ -157,11 +161,6 @@ namespace caffe {
 			);
 
 		forward_temp2hash_gpu(bottom, top);
-		
-		caffe_copy(bottom[CHANNEL_BLOB]->count(), bottom[CHANNEL_BLOB]->cpu_data(),
-			top[CHANNEL_BLOB]->mutable_cpu_data());
-		caffe_copy(bottom[DENSE_RES_BLOB]->count(), bottom[DENSE_RES_BLOB]->cpu_data(),
-			top[DENSE_RES_BLOB]->mutable_cpu_data());
 	}
 
 	template <typename Dtype>
