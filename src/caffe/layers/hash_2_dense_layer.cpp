@@ -44,12 +44,7 @@ void Hash2DenseLayer<Dtype>::reshape_top(const vector<Blob<Dtype>*>& bottom,
 	CHECK_GT(channels_, 0);
 
 	const Blob<Dtype> *bottom_m_bar_blob = bottom[M_BAR_BLOB];
-	if (!bottom_m_bar_blob->num_axes())
-	{
-		printf("*************Data not transferred. cannot reshape topHashData!\n**********");
-		exit(0);
-		return;
-	}
+
 	const int batch_num = bottom_m_bar_blob->shape(0);
 	
 	const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
@@ -62,12 +57,36 @@ void Hash2DenseLayer<Dtype>::reshape_top(const vector<Blob<Dtype>*>& bottom,
 		top_shape.push_back(dense_res);
 	}
 	top[0]->Reshape(top_shape);
+	//printf("top batch_num %d, channel %d, dense_res %d\n",
+	//	batch_num, channels_, dense_res);
+		
 }
 
 template <typename Dtype>
 void Hash2DenseLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	//// Shape the tops from the bottom hash structure info: offset, pos_tag, m_bar...
+	//if (bottom[HASH_DATA_BLOB]->count() == 1)		//data not transferred
+	//{
+	//	printf("*************Data not transferred. cannot reshape topHashData!**********\n");
+	//	printf("*************We just simply init top to a 3D volume****************\n");
+
+	//	//NOTE: here we have to transfer correct channel, num, dense_res to top
+	//	//because subsequent dense layers need the correct information for setup
+	//	int n = bottom[M_BAR_BLOB]->shape(0);
+	//	int c = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	//	int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	//	std::vector<int> _3D_shape;
+	//	_3D_shape.push_back(n);
+	//	_3D_shape.push_back(c);
+	//	for (int i=0;i<num_spatial_axes_;i++)
+	//	{
+	//		_3D_shape.push_back(dense_res);
+	//	}
+	//	top[0]->Reshape(_3D_shape);
+	//	return;
+	//}
 	reshape_top(bottom, top);
 }
 
@@ -96,7 +115,7 @@ void Hash2DenseLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 		hash_2_dense(cur_bt_hash, cur_bt_postag, cur_bt_offset, bt_m_bar,
 			bt_r_bar, channels_, cur_dense_buf, dense_res);
 
-#if 1
+#if DUMP_2_TXT
 		//debug
 		char buf[128];
 		sprintf(buf, "H2D_top_%d.hf5", i);
@@ -172,5 +191,5 @@ STUB_GPU(Hash2DenseLayer);
 
 
 INSTANTIATE_CLASS(Hash2DenseLayer);
-
+REGISTER_LAYER_CLASS(Hash2Dense);
 }  // namespace caffe

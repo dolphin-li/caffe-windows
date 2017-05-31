@@ -39,6 +39,21 @@ CuDNNPoolingLayer<Dtype>::~CuDNNPoolingLayer() {
   cudnnDestroyPoolingDescriptor(pooling_desc_);
 }
 
+
+template <typename Dtype>
+void CuDNNPoolingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+	const vector<Blob<Dtype>*>& top)
+{
+	Forward_gpu(bottom, top);
+}
+
+template <typename Dtype>
+void CuDNNPoolingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
+	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
+{
+	Backward_gpu(top, propagate_down,bottom);
+}
+
 INSTANTIATE_CLASS(CuDNNPoolingLayer);
 
 }   // namespace caffe

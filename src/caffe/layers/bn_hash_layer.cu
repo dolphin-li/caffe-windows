@@ -6,42 +6,37 @@
 #include "caffe\util\HashData.h"
 
 namespace caffe {
-
 	template <typename Dtype>
-	__global__ void hash2temp_kernel(const Dtype *hash, const int* validPos, int m_bar,
-		int channels, int def_num, int total_def_num, Dtype *temp)
+	__global__ void batch_hash2temp_kernel(const Dtype *hash, const int* validPos, 
+		const Dtype* m_sum_ptr, const Dtype* m_bar_ptr, int channels, int total_def_num,
+		const VolumeIndexType* volIdx_ptr, Dtype *temp)
 	{
-		const int m = m_bar * m_bar * m_bar;
-		CUDA_KERNEL_LOOP(valid_v, def_num)
+		CUDA_KERNEL_LOOP(threadId, total_def_num * channels)
 		{
+			const int c = threadId / total_def_num;
+			const int valid_v = threadId - total_def_num * c;
 			const int v = validPos[valid_v];
-			const Dtype *hash_ptr = hash + v;
-			Dtype *temp_ptr = temp + valid_v;
-			for (int c = 0; c < channels; c++)
-			{
-				*temp_ptr = *hash_ptr;
-				hash_ptr += m;
-				temp_ptr += total_def_num;
-			}
+			const VolumeIndexType volIdx = volIdx_ptr[valid_v];
+			const int m_sum = (int)m_sum_ptr[volIdx];
+			const int m_bar = (int)m_bar_ptr[volIdx];
+			temp[threadId] = hash[v + channels * m_sum + c * m_bar*m_bar*m_bar];
 		}
 	}
 
 	template <typename Dtype>
-	__global__ void temp2hash_kernel(Dtype *hash, const int* validPos, int m_bar,
-		int channels, int def_num, int total_def_num, const Dtype *temp)
+	__global__ void batch_temp2hash_kernel(Dtype *hash, const int* validPos,
+		const Dtype* m_sum_ptr, const Dtype* m_bar_ptr, int channels, int total_def_num,
+		const VolumeIndexType* volIdx_ptr, const Dtype *temp)
 	{
-		const int m = m_bar * m_bar * m_bar;
-		CUDA_KERNEL_LOOP(valid_v, def_num)
+		CUDA_KERNEL_LOOP(threadId, total_def_num * channels)
 		{
+			const int c = threadId / total_def_num;
+			const int valid_v = threadId - total_def_num * c;
+			const VolumeIndexType volIdx = volIdx_ptr[valid_v];
 			const int v = validPos[valid_v];
-			Dtype *hash_ptr = hash + v;
-			const Dtype *temp_ptr = temp + valid_v;
-			for (int c = 0; c < channels; c++)
-			{
-				*hash_ptr = *temp_ptr;
-				hash_ptr += m;
-				temp_ptr += total_def_num;
-			}
+			const int m_sum = (int)m_sum_ptr[volIdx];
+			const int m_bar = (int)m_bar_ptr[volIdx];
+			hash[v + channels * m_sum + c * m_bar*m_bar*m_bar] = temp[threadId];
 		}
 	}
 
@@ -72,23 +67,14 @@ namespace caffe {
 		const Dtype *hash = bottom[HASH_DATA_BLOB]->gpu_data();
 		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
 		Dtype* temp = temp_.mutable_gpu_data();
-		const int batch_num = bottom[M_BAR_BLOB]->shape(0);
 		const int total_def_num = temp_.shape(1);
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 
-			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
-				hash, validPos, m_bar, channels_, def_num, total_def_num, temp
-				);
-
-			//to next hash
-			const int m = m_bar * m_bar * m_bar;
-			hash += m * channels_;
-			validPos += m;
-			temp += def_num;
-		}
+		const Dtype* m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
+		const Dtype* m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB]->gpu_data();
+		batch_hash2temp_kernel << <CAFFE_GET_BLOCKS(total_def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
+			hash, validPos, m_sum_ptr, m_bar_ptr, channels_, total_def_num, volIdx_ptr, temp
+			);
 	}
 
 	template <typename Dtype>
@@ -98,23 +84,14 @@ namespace caffe {
 		Dtype *hash = (Dtype*)top[HASH_DATA_BLOB]->mutable_gpu_data();
 		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
 		const Dtype* temp = temp_.gpu_data();
-		const int batch_num = bottom[M_BAR_BLOB]->shape(0);
 		const int total_def_num = temp_.shape(1);
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
 
-			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
-				hash, validPos, m_bar, channels_, def_num, total_def_num, temp
-				);
-
-			//to next hash
-			const int m = m_bar * m_bar * m_bar;
-			hash += m * channels_;
-			validPos += m;
-			temp += def_num;
-		}
+		const Dtype* m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
+		const Dtype* m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB]->gpu_data();
+		batch_temp2hash_kernel << <CAFFE_GET_BLOCKS(total_def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
+			hash, validPos, m_sum_ptr, m_bar_ptr, channels_, total_def_num, volIdx_ptr, temp
+			);
 	}
 
 	template <typename Dtype>
@@ -143,7 +120,6 @@ namespace caffe {
 		else
 		{
 			/********1. compute the mean EX for each channel *************/
-			cudaMemset(mean_.mutable_gpu_data(), 0, sizeof(Dtype)*channels_);
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div, 
 				temp_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
 		}
@@ -156,7 +132,6 @@ namespace caffe {
 		/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
 		if (!use_global_stats_)
 		{
-			cudaMemset(variance_.mutable_gpu_data(), 0, sizeof(Dtype)*channels_);
 			caffe_gpu_mul(temp_.count(), temp_.gpu_data(), temp_.gpu_data(), temp2_.mutable_gpu_data());
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, var_div,
 				temp2_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), variance_.mutable_gpu_data());
@@ -278,23 +253,14 @@ namespace caffe {
 		const Dtype *hash_dif = top[HASH_DATA_BLOB]->gpu_diff();
 		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
 		Dtype* temp = temp_.mutable_gpu_data();
-		const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
 		const int total_def_num = temp_.shape(1);
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
-			const int m = m_bar * m_bar * m_bar;
 
-			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
-				hash_dif, validPos, m_bar, channels_, def_num, total_def_num, temp
-				);
-
-			//to next hash
-			hash_dif += m * channels_;
-			validPos += m;
-			temp += def_num;
-		}
+		const Dtype* m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
+		const Dtype* m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB]->gpu_data();
+		batch_hash2temp_kernel << <CAFFE_GET_BLOCKS(total_def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
+			hash_dif, validPos, m_sum_ptr, m_bar_ptr, channels_, total_def_num, volIdx_ptr, temp
+			);
 	}
 
 	template <typename Dtype>
@@ -304,23 +270,14 @@ namespace caffe {
 		Dtype *hash_dif = bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
 		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
 		const Dtype* temp = temp_.gpu_data();
-		const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
 		const int total_def_num = temp_.shape(1);
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
-			const int m = m_bar * m_bar * m_bar;
 
-			temp2hash_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
-				hash_dif, validPos, m_bar, channels_, def_num, total_def_num, temp
-				);
-
-			//to next hash
-			hash_dif += m * channels_;
-			validPos += m;
-			temp += def_num;
-		}
+		const Dtype* m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
+		const Dtype* m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB]->gpu_data();
+		batch_temp2hash_kernel << <CAFFE_GET_BLOCKS(total_def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
+			hash_dif, validPos, m_sum_ptr, m_bar_ptr, channels_, total_def_num, volIdx_ptr, temp
+			);
 	}
 
 	template <typename Dtype>
@@ -330,23 +287,14 @@ namespace caffe {
 		const Dtype *hash = top[HASH_DATA_BLOB]->gpu_data();
 		const int *validPos = (const int*)bottom[VALID_POS_BLOB]->gpu_data();
 		Dtype* buf_ptr = buf.mutable_gpu_data();
-		const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
 		const int total_def_num = buf.shape(1);
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int def_num = bottom[DEFNUM_BLOB]->cpu_data()[i];
-			const int m = m_bar * m_bar * m_bar;
 
-			hash2temp_kernel << <CAFFE_GET_BLOCKS(def_num), CAFFE_CUDA_NUM_THREADS >> > (
-				hash, validPos, m_bar, channels_, def_num, total_def_num, buf_ptr
-				);
-
-			//to next hash
-			hash += m * channels_;
-			validPos += m;
-			buf_ptr += def_num;
-		}
+		const Dtype* m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
+		const Dtype* m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB]->gpu_data();
+		batch_hash2temp_kernel << <CAFFE_GET_BLOCKS(total_def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
+			hash, validPos, m_sum_ptr, m_bar_ptr, channels_, total_def_num, volIdx_ptr, buf_ptr
+			);
 	}
 
 	INSTANTIATE_LAYER_GPU_FUNCS(BNHashLayer);

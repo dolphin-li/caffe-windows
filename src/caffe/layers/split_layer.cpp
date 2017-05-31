@@ -18,6 +18,9 @@ void SplitLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     CHECK_NE(top[i], bottom[0]) << this->type() << " Layer does not "
         "allow in-place computation.";
     top[i]->ReshapeLike(*bottom[0]);
+#if 1	//added by tianjia, to share data in the setup stage
+	top[i]->ShareData(*bottom[0]);
+#endif
     CHECK_EQ(count_, top[i]->count());
   }
 }

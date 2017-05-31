@@ -16,7 +16,7 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define INVALID_POSTAG 9999
 
 
-#define HASH_STRUCTURE_SIZE 6	//offset, postag, m_bar, r_bar, def_num, valid_pos
+#define HASH_STRUCTURE_SIZE 10	//offset, postag, m_bar, r_bar, def_num, valid_pos
 #define HASH_DATA_SIZE 3	//layer output blob num: data, channel, dense_res
 //data blob idx 
 #define HASH_DATA_BLOB 0	
@@ -29,6 +29,10 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define R_BAR_BLOB 6
 #define DEFNUM_BLOB 7
 #define VALID_POS_BLOB 8
+#define VOLUME_IDX_BLOB 9
+#define DEFNUM_SUM_BLOB 10 // def_num_sum[i] = sum(defnum(0:i-1));
+#define M_SUM_BLOB 11	// m_sum[i] = sum(m(0:i-1)), where m=m_bar*m_bar*m_bar
+#define R_SUM_BLOB 12	// r_sum[i] = sum(r(0:i-1)), where r=r_bar*r_bar*r_bar
 
 #define DUMP_2_TXT 0
 #endif

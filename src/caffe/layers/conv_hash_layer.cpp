@@ -167,4 +167,5 @@ STUB_GPU(ConvHashLayer);
 #endif
 
 INSTANTIATE_CLASS(ConvHashLayer);
+REGISTER_LAYER_CLASS(ConvHash);
 }  // namespace caffe

@@ -58,26 +58,6 @@ void BNHashLayer<Dtype>::init_self_blob(const vector<Blob<Dtype> *>& bottom)
 	this->blobs_[1].reset(new Blob<Dtype>(sz));
 	sz[0] = 1;
 	this->blobs_[2].reset(new Blob<Dtype>(sz));
-
-	switch (Caffe::mode())
-	{
-	default:
-		break;
-	case Caffe::GPU:
-		for (int i = 0; i < 3; ++i)
-		{
-			caffe_gpu_set(this->blobs_[i]->count(), Dtype(0),
-				this->blobs_[i]->mutable_gpu_data());
-		}
-		break;
-	case Caffe::CPU:
-		for (int i = 0; i < 3; ++i)
-		{
-			caffe_set(this->blobs_[i]->count(), Dtype(0),
-				this->blobs_[i]->mutable_cpu_data());
-		}
-		break;
-	}
 }
 
 
@@ -86,6 +66,13 @@ template <typename Dtype>
 void BNHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	//reshape top channel and dense res
+	std::vector<int> scalar_shape(1, 1);
+	top[CHANNEL_BLOB]->Reshape(scalar_shape);
+	top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+	//have to fill value here for subsequent layer setup
+	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
+	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
 	// Configure output channels and groups.
 	channels_ = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
 	
@@ -94,6 +81,12 @@ void BNHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 	{
 		printf("*************Data not transferred. cannot reshape topHashData!\n**********");
 		exit(0);
+		return;
+	}
+	//NOTE: the copied split blob will not have the valid m before forward().
+	if (!bottom[M_BAR_BLOB]->cpu_data()[0])
+	{
+		printf("*************Data not transferred. cannot reshape topHashData!\n**********");
 		return;
 	}
 	
@@ -106,22 +99,11 @@ void BNHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 	}
 	std::vector<int> hash_data_shape(1, batch_hash_size_ * channels_);
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
-	switch (Caffe::mode())
-	{
-	default:
-		break;
-	case Caffe::GPU:
-		cudaMemset(top[HASH_DATA_BLOB]->mutable_gpu_data(), 0, sizeof(Dtype)*batch_hash_size_ * channels_);
-		break;
-	case Caffe::CPU:
-		memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size_ * channels_);
-		break;
-	}
 
-	//reshape top channel and dense res
-	std::vector<int> scalar_shape(1, 1);
-	top[CHANNEL_BLOB]->Reshape(scalar_shape);
-	top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+	//printf("batch num %d, top channel %d, dense_res %d\n",
+	//	batch_num,
+	//	(int)top[CHANNEL_BLOB]->cpu_data()[0],
+	//	(int)top[DENSE_RES_BLOB]->cpu_data()[0]);
 }
 
 
@@ -129,6 +111,24 @@ template <typename Dtype>
 void BNHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	// Shape the tops from the bottom hash structure info: offset, pos_tag, m_bar...
+	if (bottom[HASH_DATA_BLOB]->count() == 1)		//data not transferred
+	{
+		printf("*************Data not transferred. cannot reshape topHashData!**********\n");
+		printf("*************We just simply init top with shape(1,1,1,1)****************\n");
+		std::vector<int> scalar_shape(1, 1);
+		top[CHANNEL_BLOB]->Reshape(scalar_shape);
+		top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+		top[HASH_DATA_BLOB]->Reshape(scalar_shape);
+
+		//have to fill value here for subsequent layer setup
+		top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
+		top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
+
+
+		return;
+	}
+
 	init_self_blob(bottom);
 	reshape_topHashData(bottom, top);
 

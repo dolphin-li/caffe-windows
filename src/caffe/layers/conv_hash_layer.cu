@@ -41,7 +41,7 @@ namespace caffe {
 			batch_hash_ptr += m * channels_;
 			batch_offset_ptr += r * 3;
 			batch_posTag_ptr += m;
-			batch_validPos_ptr += m;
+			batch_validPos_ptr += defNum;
 			top_batch_hash_ptr += m * num_output_;
 		}
 	}
@@ -117,7 +117,7 @@ namespace caffe {
 			bt_hash_dif += m * channels_;
 			offset_ptr += r * 3;
 			posTag_ptr += m;
-			validPos_ptr += m;
+			validPos_ptr += defNum;
 
 			top_hash_dif += m * num_output_;
 		}

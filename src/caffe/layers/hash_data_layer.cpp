@@ -261,12 +261,16 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 
 	//blobs: hash data, < offset data, position tags, m_bars, r_bars, defNums >, label
 	std::vector<int> batch_shape(1, batch_perm.size());
+	std::vector<int> batch_shape_1(1, batch_perm.size()+1);
 	//reshape m_bar, r_bar, define_num
 	for (int i=0;i<struct_num;i++)
 	{
 		top_blobs[M_BAR_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape);
 		top_blobs[R_BAR_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape);
 		top_blobs[DEFNUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape);
+		top_blobs[DEFNUM_SUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape_1);
+		top_blobs[M_SUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape_1);
+		top_blobs[R_SUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape_1);
 	}
 	
 	std::vector<int> scalar_shape(1, 1);	//the blob only has one scalar value
@@ -288,11 +292,16 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		Blob<Dtype>* rBar_blob = top_blobs[R_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* defNum_blob = top_blobs[DEFNUM_BLOB + si * HASH_STRUCTURE_SIZE];
 		Blob<Dtype>* validPos_blob = top_blobs[VALID_POS_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* volIdx_blob = top_blobs[VOLUME_IDX_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* defNumSum_blob = top_blobs[DEFNUM_SUM_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* mSum_blob = top_blobs[M_SUM_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* rSum_blob = top_blobs[R_SUM_BLOB + si * HASH_STRUCTURE_SIZE];
 
 		int batch_m = 0;
 		int batch_r = 0;
 		int m_bar, r_bar, defNum;
 		int m, r;	//m_bar*m_bar*m_bar, r_bar*r_bar*r_bar
+		int totalDefNum = 0;
 		for (int j=0 ; j<(int)batch_perm.size();j++)
 		{
 			const int idx = batch_perm[j];
@@ -303,10 +312,17 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 			mBar_blob->mutable_cpu_data()[j] = (Dtype)m_bar;
 			rBar_blob->mutable_cpu_data()[j] = (Dtype)r_bar;
 			defNum_blob->mutable_cpu_data()[j] = (Dtype)defNum;
+			defNumSum_blob->mutable_cpu_data()[j] = (Dtype)totalDefNum;
+			mSum_blob->mutable_cpu_data()[j] = (Dtype)batch_m;
+			rSum_blob->mutable_cpu_data()[j] = (Dtype)batch_r;
 
 			batch_m += m_bar * m_bar * m_bar;
 			batch_r += r_bar * r_bar * r_bar;
+			totalDefNum += defNum;
 		}
+		defNumSum_blob->mutable_cpu_data()[batch_perm.size()] = (Dtype)totalDefNum;
+		mSum_blob->mutable_cpu_data()[batch_perm.size()] = (Dtype)batch_m;
+		rSum_blob->mutable_cpu_data()[batch_perm.size()] = (Dtype)batch_r;
 
 		//fill the offset and posTag
 		const int offset_size_f = (batch_r * 3 * sizeof(unsigned char)) / sizeof(Dtype) + 1;
@@ -318,13 +334,18 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		postag_blob->Reshape(posTag_shape);
 		//valid position tag, should convert to int, we store it the same size as posTag, 
 		// but its actual size should be defNum
-		const int validPos_size_f = (batch_m * sizeof(int)) / sizeof(Dtype) + 1;
+		const int validPos_size_f = (totalDefNum * sizeof(int)) / sizeof(Dtype) + 1;
 		std::vector<int> validPos_shape(1, validPos_size_f);
 		validPos_blob->Reshape(validPos_shape);
+		//volume index of each valid voxel
+		const int volIdx_size_f = (totalDefNum * sizeof(VolumeIndexType)) / sizeof(Dtype) + 1;
+		std::vector<int> volIdx_shape(1, volIdx_size_f);
+		volIdx_blob->Reshape(volIdx_shape);
 
 		unsigned char *batch_offset_ptr = (unsigned char *)offset_blob->mutable_cpu_data();
 		PACKED_POSITION *batch_posTag_ptr = (PACKED_POSITION *)postag_blob->mutable_cpu_data();
 		int* batch_validPos_ptr = (int*)validPos_blob->mutable_cpu_data();
+		VolumeIndexType* batch_volIdx_ptr = (VolumeIndexType*)volIdx_blob->mutable_cpu_data();
 		
 		for (int j = 0; j < (int)batch_perm.size(); j++)
 		{
@@ -333,13 +354,17 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 			r_bar = m_vpHierHashes[idx]->m_vpStructs[si]->m_rBar;
 			m = m_bar*m_bar*m_bar;
 			r = r_bar*r_bar*r_bar;
+			defNum = m_vpHierHashes[idx]->m_vpStructs[si]->m_defNum;
 
 			memcpy(batch_offset_ptr, m_vpHierHashes[idx]->m_vpStructs[si]->m_offset_data, sizeof(unsigned char)*r * 3);
 			memcpy(batch_posTag_ptr, m_vpHierHashes[idx]->m_vpStructs[si]->m_position_tag, sizeof(PACKED_POSITION)*m);
 			getValidPoses(batch_posTag_ptr, batch_validPos_ptr, m);
+			for (int tmp_i = 0; tmp_i < defNum; tmp_i++)
+				batch_volIdx_ptr[tmp_i] = (VolumeIndexType)idx;
 			batch_offset_ptr += r * 3;
 			batch_posTag_ptr += m;
-			batch_validPos_ptr += m;
+			batch_validPos_ptr += defNum;
+			batch_volIdx_ptr += defNum;
 		}
 
 
@@ -416,9 +441,9 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 	  m_batch_perm[i] = data_permutation_[i];
   }
   
-  //HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
+  //send the first batch to tops in the setup stage, in order to allocate essential memories
+  HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
   //reshape the top label, as the other blobs' shape will change every batch
- 
   vector<int> top_label_shape;
   top_label_shape.resize(label_blob_.num_axes());
   top_label_shape[0] = batch_num;

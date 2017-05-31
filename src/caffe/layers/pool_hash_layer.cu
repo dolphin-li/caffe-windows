@@ -10,137 +10,106 @@
 
 namespace caffe {
 
-	__global__ void forward_gpu_max_kernel(const float *bottom_hash, const unsigned char *bottom_offset,
-		const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
-		float *top_hash, const unsigned char *top_offset,
-		const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar,
-		int *mask, int channels, int bt_dense_res, int3 stride)
+	template<class Dtype>
+	__device__ __forceinline__ Dtype cubic(Dtype a)
 	{
-		const int top_m = top_m_bar * top_m_bar * top_m_bar;
-		const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
-		const int bottom_r2 = bottom_r_bar * bottom_r_bar;
-		const int bottom_m2 = bottom_m_bar * bottom_m_bar;
-		CUDA_KERNEL_LOOP(v, top_m)
-		{
-			//if the hash voxel is undefined, skip
-			if (!ishashVoxelDefined_g(top_posTag[v]))
-				continue;
+		return a*a*a;
+	}
 
-			float *tp_hash_ptr = top_hash + v;
+	template<class Dtype>
+	__global__ void batch_forward_gpu_max_kernel(
+		const Dtype *bottom_hash_0, const PACKED_POSITION *bottom_posTag_0, const unsigned char *bottom_offset_0, 
+		const Dtype* bottom_m_bar_ptr, const Dtype* bottom_m_sum_ptr, 
+		const Dtype* bottom_r_bar_ptr, const Dtype* bottom_r_sum_ptr,
+		Dtype *top_hash_0, const PACKED_POSITION *top_posTag_0,
+		const Dtype* top_m_bar_ptr, const Dtype* top_m_sum_ptr, int *mask_0,
+		const VolumeIndexType* volIdx_ptr, const int* validPos,
+		const int channels, const int bt_dense_res, const int3 stride,
+		const int total_top_defNUm, const int nThreads, const int channelPerGroup)
+	{
+		CUDA_KERNEL_LOOP(threadId, nThreads)
+		{
+			const int group = threadId / total_top_defNUm;
+			const int valid_v = threadId - group * total_top_defNUm;
+			const VolumeIndexType volIdx = volIdx_ptr[valid_v];
+			const int firstChannel = group * channelPerGroup;
+			const int lastChannel = min(firstChannel + channelPerGroup, channels);
+			const int top_m_sum = top_m_sum_ptr[volIdx];
+			const int top_m = cubic(int(top_m_bar_ptr[volIdx]));
+			const int bottom_m_bar = bottom_m_bar_ptr[volIdx];
+			const int bottom_m_sum = bottom_m_sum_ptr[volIdx];
+			const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+			const int bottom_r_bar = bottom_r_bar_ptr[volIdx];
+			const int v = validPos[valid_v];
+			const Dtype* bottom_hash = bottom_hash_0 + bottom_m_sum * channels;
+			Dtype* top_hash = top_hash_0 + top_m_sum * channels + v;
+			int* mask = mask_0 + top_m_sum * channels + v;
+			const unsigned char* bottom_offset = bottom_offset_0 + int(bottom_r_sum_ptr[volIdx]) * 3;
+
+			const int3 center = xyz_from_pack_g(top_posTag_0[v + top_m_sum]);
 
 			//init to min
-			for (int c = 0; c < channels; c++)
-			{
-				*tp_hash_ptr = -FLT_MAX;
-				tp_hash_ptr += top_m;
-			}
+			for (int c = firstChannel; c < lastChannel; c++)
+				top_hash[top_m*c] = -FLT_MAX;
 
-			//get the real voxel position from the position tag
-			int cx, cy, cz;
-			xyz_from_pack_g(top_posTag[v], cx, cy, cz);	//get the voxel position mapped to this hash														
-
-			const int min_x = max(0, cx * stride.x);
-			const int min_y = max(0, cy * stride.y);
-			const int min_z = max(0, cz * stride.z);
+			const int min_x = max(0, center.x * stride.x);
+			const int min_y = max(0, center.y * stride.y);
+			const int min_z = max(0, center.z * stride.z);
 			const int x_end = min(min_x + stride.x, bt_dense_res);
 			const int y_end = min(min_y + stride.y, bt_dense_res);
 			const int z_end = min(min_z + stride.z, bt_dense_res);
 
-			int bt_mx, bt_my, bt_mz;
 			for (int nz = min_z; nz < z_end; ++nz)
-			for (int ny = min_y; ny < y_end; ++ny)
-				for (int nx = min_x; nx < x_end; ++nx)
-				{
-					//hash to get hash position
-					Hash_g(nx, ny, nz, bt_mx, bt_my, bt_mz,
-						bottom_offset, bottom_m_bar, bottom_r_bar, bottom_r2);
-					const int bt_m_idx = NXYZ2I_g(bt_mx, bt_my, bt_mz, bottom_m_bar, bottom_m2);
-
-					//the bottom hash voxel is undefined
-					if (!ishashVoxelDefined_g(bottom_posTag[bt_m_idx]))
-						continue;
-
-					int stored_x, stored_y, stored_z;
-					xyz_from_pack_g(bottom_posTag[bt_m_idx], stored_x, stored_y, stored_z);
-					if (nx != stored_x || ny != stored_y || nz != stored_z)	//undefined dense voxel
-						continue;
-
-					const float *bt_hash_ptr = bottom_hash + bt_m_idx;
-					tp_hash_ptr = top_hash + v;
-					int *mask_ptr = mask + v;
-					for (int c = 0; c < channels; c++)
+				for (int ny = min_y; ny < y_end; ++ny)
+					for (int nx = min_x; nx < x_end; ++nx)
 					{
-						if (*tp_hash_ptr < *bt_hash_ptr)
+						//hash to get hash position
+						const int bt_m_idx = NXYZ2I_g(Hash_g(nx, ny, nz, bottom_offset, 
+							bottom_m_bar, bottom_r_bar), bottom_m_bar);
+						const int3 stored = xyz_from_pack_g(bottom_posTag_0[bt_m_idx + bottom_m_sum]);
+
+						//the bottom hash voxel is undefined
+						if (!ishashVoxelDefined_g(stored) || nx != stored.x || ny != stored.y || nz != stored.z)
+							continue;
+						for (int c = firstChannel; c < lastChannel; c++)
 						{
-							*tp_hash_ptr = *bt_hash_ptr;
-							*mask_ptr = bt_m_idx;
+							const Dtype bt_hash_val = bottom_hash[bt_m_idx + bottom_m*c];
+							if (top_hash[top_m*c] < bt_hash_val)
+							{
+								top_hash[top_m*c] = bt_hash_val;
+								mask[top_m*c] = bt_m_idx;
+							}
 						}
-						tp_hash_ptr += top_m;
-						mask_ptr += top_m;
-						bt_hash_ptr += bottom_m;
-					}
-				} // end for nx, ny, nz
+					} // end for nx, ny, nz
 		} // end for caffe_kernel_loop
 	}
 
-	__global__ void backward_gpu_max_kernel(float *bottom_dif, int bottom_m_bar,
-		const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
-		const int *mask, int channels)
-	{
-		const int top_m = top_m_bar * top_m_bar * top_m_bar;
-		const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
-		CUDA_KERNEL_LOOP(v, top_m)
-		{
-			//if the hash voxel is undefined, skip
-			if (!ishashVoxelDefined_g(top_posTag[v]))
-			{
-				continue;
-			}
-			///////////////////////////////////////////
-
-			const float *tp_dif_ptr = top_dif + v;
-			const int *mask_ptr = mask + v;
-			float *bt_dif_start = bottom_dif;
-			//init to min
-			for (int c = 0; c < channels; c++)
-			{
-				const int bt_m_idx = *mask_ptr;
-
-				bt_dif_start[bt_m_idx] += *tp_dif_ptr;
-
-				tp_dif_ptr += top_m;
-				mask_ptr += top_m;
-				bt_dif_start += bottom_m;
-			}
-		}
-	}
 
 	template<class Dtype>
-	void PoolHashLayer<Dtype>::forward_gpu_max(const float *bottom_hash, const unsigned char *bottom_offset,
-		const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
-		float *top_hash, const unsigned char *top_offset,
-		const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar,
-		int *mask, int channels, int bt_dense_res)
+	__global__ void batch_backward_gpu_max_kernel(
+		Dtype *bottom_dif, const Dtype* bottom_m_bar_ptr, const Dtype* bottom_m_sum_ptr,
+		const Dtype *top_dif, const Dtype* top_m_bar_ptr, const Dtype* top_m_sum_ptr,
+		const int *mask, 
+		const int *validPos,
+		const VolumeIndexType* volIdx_ptr,
+		const int channels, 
+		const int top_total_def_num)
 	{
-		const int top_m = top_m_bar * top_m_bar * top_m_bar;
-		const int stride_x = stride_shape_.cpu_data()[0];
-		const int stride_y = stride_shape_.cpu_data()[1];
-		const int stride_z = stride_shape_.cpu_data()[2];
-		if (stride_x != stride_y || stride_x != stride_z)
+		CUDA_KERNEL_LOOP(threadId, top_total_def_num*channels)
 		{
-			printf("Fatal error: we only consider same strides!\n");
-			exit(0);
+			const int c = threadId / top_total_def_num;
+			const int valid_v = threadId - top_total_def_num * c;
+			const VolumeIndexType volIdx = volIdx_ptr[valid_v];
+			const int top_m_bar = top_m_bar_ptr[volIdx];
+			const int top_m_sum = top_m_sum_ptr[volIdx];
+			const int top_m = top_m_bar*top_m_bar*top_m_bar;
+			const int bottom_m_bar = bottom_m_bar_ptr[volIdx];
+			const int bottom_m_sum = bottom_m_sum_ptr[volIdx];
+			const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+			const int v = validPos[valid_v] + c*top_m + channels*top_m_sum;
+			const int bt_m_idx = mask[v];
+			bottom_dif[bt_m_idx + bottom_m * c + channels*bottom_m_sum] = top_dif[v];
 		}
-
-		//init mask
-		caffe_gpu_set(top_m*channels, -1, mask);
-
-		//max pool kernel
-		forward_gpu_max_kernel << <CAFFE_GET_BLOCKS(top_m), CAFFE_CUDA_NUM_THREADS >> > (
-			bottom_hash, bottom_offset, bottom_posTag, bottom_m_bar, bottom_r_bar,
-			top_hash, top_offset, top_posTag, top_m_bar, top_r_bar,
-			mask, channels, bt_dense_res, make_int3(stride_x, stride_y, stride_z)
-			);	
 	}
 
 	template <typename Dtype>
@@ -171,53 +140,40 @@ namespace caffe {
 	void PoolHashLayer<Dtype>::Forward_gpu_max(const vector<Blob<Dtype>*>& bottom,
 		const vector<Blob<Dtype>*>& top)
 	{
-		const float *bt_hash = (const float*)bottom[HASH_DATA_BLOB]->gpu_data();
+		const int stride_x = stride_shape_.cpu_data()[0];
+		const int stride_y = stride_shape_.cpu_data()[1];
+		const int stride_z = stride_shape_.cpu_data()[2];
+		CHECK(stride_x == stride_y || stride_x != stride_z);
+		const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+		const int total_top_defNUm = bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[
+			bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->count() - 1];
+		const int groups = (channels_ + CHANNEL_GROUP_NUM - 1) / CHANNEL_GROUP_NUM;
+		const int nThreads = total_top_defNUm * groups;
+		const int channelPerGroup = (channels_ + groups - 1) / groups;
+
+		const Dtype *bt_hash = bottom[HASH_DATA_BLOB]->gpu_data();
 		const unsigned char*bt_offset = (const unsigned char *)bottom[OFFSET_BLOB]->gpu_data();
 		const PACKED_POSITION *bt_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->gpu_data();
+		const Dtype* bt_m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const Dtype* bt_m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
+		const Dtype* bt_r_bar_ptr = bottom[R_BAR_BLOB]->gpu_data();
+		const Dtype* bt_r_sum_ptr = bottom[R_SUM_BLOB]->gpu_data();
 
-		float *tp_hash = (float*)top[HASH_DATA_BLOB]->mutable_gpu_data();
-		const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		Dtype *tp_hash = (Dtype*)top[HASH_DATA_BLOB]->mutable_gpu_data();
 		const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const Dtype *tp_m_bar_ptr = bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const Dtype *tp_m_sum_ptr = bottom[M_SUM_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
 
+		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const int* validPos = (const int*)bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
 		int *mask = max_idx_.mutable_gpu_data();
 
-		int batch_num = bottom[M_BAR_BLOB]->shape(0);
-		const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
-		const int tp_dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
-		for (int i = 0; i < batch_num; ++i)
-		{
-			const float* cur_bt_hash = bt_hash;
-			const unsigned char* cur_bt_offset = bt_offset;
-			const PACKED_POSITION *cur_bt_postag = bt_posTag;
-			const int bt_m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int bt_r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
-
-
-			float *cur_tp_hash = tp_hash;
-			int *cur_mask = mask;
-			const unsigned char*cur_tp_offset = tp_offset;
-			const PACKED_POSITION *cur_tp_postag = tp_posTag;
-			const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
-			const int tp_r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
-
-			forward_gpu_max(cur_bt_hash, cur_bt_offset, cur_bt_postag, bt_m_bar, bt_r_bar,
-				cur_tp_hash, cur_tp_offset, cur_tp_postag, tp_m_bar, tp_r_bar,
-				cur_mask, channels_, bt_dense_res);
-
-			//to next hash
-			const int bt_m = bt_m_bar * bt_m_bar * bt_m_bar;
-			const int bt_r = bt_r_bar * bt_r_bar * bt_r_bar;
-			bt_hash += bt_m * channels_;
-			bt_offset += bt_r * 3;
-			bt_posTag += bt_m;
-
-			const int tp_m = tp_m_bar * tp_m_bar * tp_m_bar;
-			const int tp_r = tp_r_bar * tp_r_bar * tp_r_bar;
-			tp_hash += tp_m * channels_;
-			mask += tp_m * channels_;
-			tp_offset += tp_r * 3;
-			tp_posTag += tp_m;
-		}
+		batch_forward_gpu_max_kernel << <CAFFE_GET_BLOCKS(nThreads), CAFFE_CUDA_NUM_THREADS >> > (
+			bt_hash, bt_posTag, bt_offset, bt_m_bar_ptr, bt_m_sum_ptr, bt_r_bar_ptr, bt_r_sum_ptr,
+			tp_hash, tp_posTag, tp_m_bar_ptr, tp_m_sum_ptr, mask, volIdx_ptr, validPos,
+			channels_, bt_dense_res, make_int3(stride_x, stride_y, stride_z), 
+			total_top_defNUm, nThreads, channelPerGroup
+			);
 	}
 
 	template <typename Dtype>
@@ -243,65 +199,25 @@ namespace caffe {
 	void PoolHashLayer<Dtype>::Backward_gpu_max(const vector<Blob<Dtype>*>& top,
 		const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 	{
-		float *bt_hash_dif = (float*)bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
-		const unsigned char*bt_offset = (const unsigned char *)bottom[OFFSET_BLOB]->gpu_data();
-		const PACKED_POSITION *bt_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->gpu_data();
+		Dtype *bt_hash_dif = (Dtype*)bottom[HASH_DATA_BLOB]->mutable_gpu_diff();
+		const Dtype* bt_m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
+		const Dtype* bt_m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
 
-		const float *tp_hash_dif = (const float*)top[HASH_DATA_BLOB]->gpu_diff();
-		const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
-		const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const Dtype *tp_hash_dif = top[HASH_DATA_BLOB]->gpu_diff();
+		const int *tp_validPos = (const int *)bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const Dtype* tp_m_bar_ptr = bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const Dtype* tp_m_sum_ptr = bottom[M_SUM_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const VolumeIndexType* tp_volIdx = (const VolumeIndexType*)
+			bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
+		const int tp_totalDefNum = bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[
+			bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->count()-1];
 
 		const int *mask = max_idx_.gpu_data();
 
-		int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
-		const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
-		const int tp_dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
-
-		for (int i = 0; i < batch_num; ++i)
-		{
-			float* cur_bt_dif = bt_hash_dif;
-			const int bt_m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
-			const int bt_r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
-
-
-			const float *cur_tp_dif = tp_hash_dif;
-			const int *cur_mask = mask;
-			const PACKED_POSITION *cur_tp_postag = tp_posTag;
-			const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
-			const int tp_r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
-
-			backward_gpu_max(cur_bt_dif, bt_m_bar,
-				cur_tp_dif, cur_tp_postag, tp_m_bar,
-				cur_mask, channels_);
-
-			//to next hash
-			const int bt_m = bt_m_bar * bt_m_bar * bt_m_bar;
-			const int bt_r = bt_r_bar * bt_r_bar * bt_r_bar;
-			bt_hash_dif += bt_m * channels_;
-			bt_offset += bt_r * 3;
-			bt_posTag += bt_m;
-
-			const int tp_m = tp_m_bar * tp_m_bar * tp_m_bar;
-			const int tp_r = tp_r_bar * tp_r_bar * tp_r_bar;
-			tp_hash_dif += tp_m * channels_;
-			mask += tp_m * channels_;
-			tp_offset += tp_r * 3;
-			tp_posTag += tp_m;
-		}
-	}
-
-	template <typename Dtype>
-	void PoolHashLayer<Dtype>::backward_gpu_max(float *bottom_dif, int bottom_m_bar,
-		const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
-		const int *mask, int channels)
-	{
-		const int top_m = top_m_bar * top_m_bar * top_m_bar;
-		const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
-		
-		//init dif to zero
-		caffe_gpu_set(bottom_m*channels, (float)0, bottom_dif);
-		backward_gpu_max_kernel << <CAFFE_GET_BLOCKS(top_m), CAFFE_CUDA_NUM_THREADS >> > (
-			bottom_dif, bottom_m_bar, top_dif, top_posTag, top_m_bar, mask, channels
+		caffe_gpu_set(bottom[HASH_DATA_BLOB]->count(), (Dtype)0, bt_hash_dif);
+		batch_backward_gpu_max_kernel << <CAFFE_GET_BLOCKS(tp_totalDefNum*channels_), CAFFE_CUDA_NUM_THREADS >> > (
+			bt_hash_dif, bt_m_bar_ptr, bt_m_sum_ptr, tp_hash_dif, tp_m_bar_ptr, tp_m_sum_ptr,
+			mask, tp_validPos, tp_volIdx, channels_, tp_totalDefNum
 			);
 	}
 

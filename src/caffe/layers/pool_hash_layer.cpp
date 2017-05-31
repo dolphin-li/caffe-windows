@@ -77,9 +77,20 @@ template <typename Dtype>
 void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	//reshape top channel and dense res
+	std::vector<int> scalar_shape(1, 1);
+	top[CHANNEL_BLOB]->Reshape(scalar_shape);
+	top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+
+	//fill the channel and dense for next layer
+	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
+	const int stride = stride_shape_.cpu_data()[0];
+	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = ((int)bottom[DENSE_RES_BLOB]->cpu_data()[0] / stride);
+
+
 	// Configure output channels and groups.
 	channels_ = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
-	printf("************Pooling layer: input channels %d*******\n", channels_);
+	//printf("************Pooling layer: input channels %d*******\n", channels_);
 	CHECK_GT(channels_, 0);
 
 	const Blob<Dtype> *bottom_m_bar_blob = bottom[M_BAR_BLOB];
@@ -90,6 +101,13 @@ void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& botto
 		exit(0);
 		return;
 	}
+	//NOTE: the copied split blob will not have the valid m before forward().
+	if (!bottom[M_BAR_BLOB]->cpu_data()[0])
+	{
+		printf("*************Data not transferred. cannot reshape topHashData!\n**********");
+		return;
+	}
+
 	const int top_channels = channels_;
 	const int batch_num = bottom_m_bar_blob->shape(0);
 	if (batch_num != top_m_bar_blob->shape(0))
@@ -106,7 +124,7 @@ void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& botto
 	}
 	std::vector<int> hash_data_shape(1, batch_hash_size * top_channels);
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
-	memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
+	//memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
 
 	//also reshape max_idx_
 	if (this->layer_param_.pooling_param().pool() == PoolingParameter_PoolMethod_MAX)
@@ -114,16 +132,35 @@ void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& botto
 		max_idx_.Reshape(hash_data_shape);
 	}	
 
-	//reshape top channel and dense res
-	std::vector<int> scalar_shape(1, 1);
-	top[CHANNEL_BLOB]->Reshape(scalar_shape);
-	top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+	//printf("batch num %d, top channel %d, dense_res %d\n",
+	//	batch_num,
+	//	(int)top[CHANNEL_BLOB]->cpu_data()[0],
+	//	(int)top[DENSE_RES_BLOB]->cpu_data()[0]);
 }
 
 template <typename Dtype>
 void PoolHashLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	// Shape the tops from the bottom hash structure info: offset, pos_tag, m_bar...
+	if (bottom[HASH_DATA_BLOB]->count() == 1)		//data not transferred
+	{
+		printf("*************Data not transferred. cannot reshape topHashData!**********\n");
+		printf("*************We just simply init top with shape(1,1,1,1)****************\n");
+		std::vector<int> scalar_shape(1, 1);
+		top[CHANNEL_BLOB]->Reshape(scalar_shape);
+		top[DENSE_RES_BLOB]->Reshape(scalar_shape);
+		top[HASH_DATA_BLOB]->Reshape(scalar_shape);	//simply reshape to avoid empty error
+
+
+		//fill the channel and dense for next layer
+		top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
+		const int stride = stride_shape_.cpu_data()[0];
+		top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = ((int)bottom[DENSE_RES_BLOB]->cpu_data()[0] / stride);
+		//printf("top dense resolution %d\n", (int)top[DENSE_RES_BLOB]->cpu_data()[0]);
+
+		return;
+	}
 	reshape_topHashData(bottom, top);
 }
 
@@ -320,7 +357,7 @@ void PoolHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	const int stride = stride_shape_.cpu_data()[0];
 
 	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = ((int)bottom[DENSE_RES_BLOB]->cpu_data()[0]/ stride);
-	printf("top dense resolution %d\n", (int)top[DENSE_RES_BLOB]->cpu_data()[0]);
+	//printf("top dense resolution %d\n", (int)top[DENSE_RES_BLOB]->cpu_data()[0]);
 
 	switch (this->layer_param_.pooling_param().pool()) {
 	case PoolingParameter_PoolMethod_MAX:
@@ -490,7 +527,7 @@ STUB_GPU(PoolHashLayer);
 #endif
 
 INSTANTIATE_CLASS(PoolHashLayer);
-
+REGISTER_LAYER_CLASS(PoolHash);
 }  // namespace caffe
 
 

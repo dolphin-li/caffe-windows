@@ -606,7 +606,7 @@ caffe::ConvHashLayer<float> *test_hash_conv_layer_forward(const std::vector<Blob
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
 	cudaThreadSynchronize();
-	const int nEvals = 100;
+	const int nEvals = 1000;
 	caffe::Timer timer;
 	timer.Start();
 	for(int i = 0; i < nEvals; i++)
@@ -711,6 +711,7 @@ void test_hash_conv_layer_backward(caffe::ConvHashLayer<float> *pConvLayer, cons
 	timer.Start();
 	for (int i = 0; i < nEvals; i++)
 		pConvLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
 	timer.Stop();
 	printf("convolution backward time: %f seconds\n", timer.Seconds() / float(nEvals));
 
@@ -755,7 +756,18 @@ caffe::PoolHashLayer<float> *test_pool_layer_forward(const std::vector<Blob<floa
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
-	pool_hash_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		pool_hash_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	timer.Stop();
+	const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	printf("pooling forward time[res=%d, num=%d, channel=%d]: %f seconds\n",
+		dense_res, bottom[M_BAR_BLOB]->shape()[0], channels,
+		timer.Seconds() / float(nEvals));
 	GPU_CPU_COMPARE(top, gpu_top);
 	Caffe::set_mode(Caffe::Brew::CPU);
 	release_blobs(gpu_top);
@@ -823,7 +835,15 @@ void test_pool_layer_backward(caffe::PoolHashLayer<float> *pPoolLayer, const std
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto cpu_bottom = create_blobs(bottom.size(), &bottom, true);
-	pPoolLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		pPoolLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	timer.Stop();
+	printf("polling backward time: %f seconds\n", timer.Seconds() / float(nEvals));
 	GPU_CPU_COMPARE(cpu_bottom, bottom);
 	Caffe::set_mode(Caffe::Brew::CPU);
 	release_blobs(cpu_bottom);
@@ -879,7 +899,17 @@ caffe::BNHashLayer<float> *test_bn_layer_forward(const std::vector<Blob<float> *
 	Caffe::set_mode(Caffe::Brew::GPU);
 	auto gpu_top = create_blobs(top.size(), &top);
 	bn_hash_layer->SetUp(bottom, gpu_top);
-	bn_hash_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		bn_hash_layer->Forward(bottom, gpu_top);
+	cudaThreadSynchronize();
+	timer.Stop();
+	printf("bn forward time[res=%d, num=%d, channel=%d]: %f seconds\n",
+		dense_res, bottom[M_BAR_BLOB]->shape()[0], channels,
+		timer.Seconds() / float(nEvals));
 
 	//std::vector<Blob<float> *> structed_top(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
 	//structed_top[HASH_DATA_BLOB] = gpu_top[HASH_DATA_BLOB];
@@ -996,7 +1026,15 @@ void test_bn_layer_backward(caffe::BNHashLayer<float> *pBNLayer, const std::vect
 
 #ifdef GPU_DEBUG
 	Caffe::set_mode(Caffe::Brew::GPU);
-	pBNLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	const int nEvals = 1000;
+	caffe::Timer timer;
+	timer.Start();
+	for (int i = 0; i < nEvals; i++)
+		pBNLayer->Backward(top, bp_flag, bottom);
+	cudaThreadSynchronize();
+	timer.Stop();
+	printf("bn backward time: %f seconds\n", timer.Seconds() / float(nEvals));
 
 	blobs_2_batchHash(bottom, bottom_dif_batch, 1);
 	bottom_dif_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
@@ -1102,7 +1140,7 @@ void test_hash()
 	test_hash_data_layer_forward(data_top);
 
 	/*****************Conv layer***************************/
-	const int num_output = 10;
+	const int num_output = 100;
 	const int kernel_size = 3;
 	std::vector<Blob<float> *> conv_top;
 	std::vector<Blob<float>*> conv_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
@@ -1115,6 +1153,10 @@ void test_hash()
 	conv_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	conv_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
 	conv_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
+	conv_bottom[VOLUME_IDX_BLOB] = data_top[VOLUME_IDX_BLOB];
+	conv_bottom[DEFNUM_SUM_BLOB] = data_top[DEFNUM_SUM_BLOB];
+	conv_bottom[M_SUM_BLOB] = data_top[M_SUM_BLOB];
+	conv_bottom[R_SUM_BLOB] = data_top[R_SUM_BLOB];
 
 	caffe::ConvHashLayer<float> *pConvLayer = test_hash_conv_layer_forward(conv_bottom, conv_top, num_output, kernel_size);
 	test_hash_conv_layer_backward(pConvLayer, conv_bottom, conv_top);
@@ -1131,6 +1173,10 @@ void test_hash()
 	pool_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
 	pool_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
 	pool_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
+	pool_bottom[VOLUME_IDX_BLOB] = data_top[VOLUME_IDX_BLOB];
+	pool_bottom[DEFNUM_SUM_BLOB] = data_top[DEFNUM_SUM_BLOB];
+	pool_bottom[M_SUM_BLOB] = data_top[M_SUM_BLOB];
+	pool_bottom[R_SUM_BLOB] = data_top[R_SUM_BLOB];
 	//pool top struct
 	pool_bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE] = data_top[OFFSET_BLOB + HASH_STRUCTURE_SIZE];	//pool bottom struct
 	pool_bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE] = data_top[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
@@ -1138,6 +1184,10 @@ void test_hash()
 	pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE] = data_top[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
 	pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE] = data_top[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE] = data_top[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[M_SUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[M_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	pool_bottom[R_SUM_BLOB + HASH_STRUCTURE_SIZE] = data_top[R_SUM_BLOB + HASH_STRUCTURE_SIZE];
 
 	caffe::PoolHashLayer<float> *pPoolLayer = test_pool_layer_forward(pool_bottom, pool_top, 2);
 	test_pool_layer_backward(pPoolLayer, pool_bottom, pool_top);
@@ -1154,6 +1204,10 @@ void test_hash()
 	bn_bottom[R_BAR_BLOB] = pool_bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
 	bn_bottom[DEFNUM_BLOB] = pool_bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
 	bn_bottom[VALID_POS_BLOB] = pool_bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[VOLUME_IDX_BLOB] = pool_bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[DEFNUM_SUM_BLOB] = pool_bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[M_SUM_BLOB] = pool_bottom[M_SUM_BLOB + HASH_STRUCTURE_SIZE];
+	bn_bottom[R_SUM_BLOB] = pool_bottom[R_SUM_BLOB + HASH_STRUCTURE_SIZE];
 	//bn_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
 	//bn_bottom[CHANNEL_BLOB] = data_top[CHANNEL_BLOB];
 	//bn_bottom[DENSE_RES_BLOB] = data_top[DENSE_RES_BLOB];
@@ -1179,6 +1233,10 @@ void test_hash()
 	h2d_bottom[R_BAR_BLOB] = bn_bottom[R_BAR_BLOB];
 	h2d_bottom[DEFNUM_BLOB] = bn_bottom[DEFNUM_BLOB];
 	h2d_bottom[VALID_POS_BLOB] = bn_bottom[VALID_POS_BLOB];
+	h2d_bottom[VOLUME_IDX_BLOB] = bn_bottom[VOLUME_IDX_BLOB];
+	h2d_bottom[DEFNUM_SUM_BLOB] = bn_bottom[DEFNUM_SUM_BLOB];
+	h2d_bottom[M_SUM_BLOB] = bn_bottom[M_SUM_BLOB];
+	h2d_bottom[R_SUM_BLOB] = bn_bottom[R_SUM_BLOB];
 
 	caffe::Hash2DenseLayer<float> *pH2DLayer = test_hash2dense_layer_forward(h2d_bottom, h2d_top);
 	test_hash2dense_layer_backward(pH2DLayer, h2d_bottom, h2d_top);
