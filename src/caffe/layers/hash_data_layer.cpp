@@ -426,7 +426,7 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   {
 	  top_label_shape[j] = label_blob_.shape(j);
   }
-  printf("Label shape : !\n");
+  printf("Label shape : \n");
   for (int i=0;i<(int)top_label_shape.size();i++)
   {
 	  printf("%d ", top_label_shape[i]);
@@ -499,7 +499,7 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 
   HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
 
-#if 1//for debug
+#if DUMP_2_TXT//for debug
   save_blobs_to_hashFiles(top, "test_hash_data_layer");
 #endif
 

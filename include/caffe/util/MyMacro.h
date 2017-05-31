@@ -29,4 +29,6 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define R_BAR_BLOB 6
 #define DEFNUM_BLOB 7
 #define VALID_POS_BLOB 8
+
+#define DUMP_2_TXT 0
 #endif

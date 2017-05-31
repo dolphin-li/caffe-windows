@@ -1191,8 +1191,8 @@ void test_hash()
 int main(int argc, char** argv) {
 	srand(time(NULL));
 	/*************For test*****************/
-	test_hash();
-	return 0;
+	//test_hash();
+	//return 0;
 	/**************************************/
 
   // Print output to stderr (while still logging).

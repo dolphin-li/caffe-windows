@@ -63,7 +63,7 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   }
   
 
-#if 1//for debug
+#if DUMP_2_TXT//for debug
   writeDenseKernel_2_HF5("kernel.hf5");
   writeBias_2_HF5("bias.hf5");
 #endif
@@ -156,7 +156,7 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	  top_hash_dif += m * num_output_;
   }
 
-#if 1//for debug
+#if DUMP_2_TXT//for debug
   writeDenseKernelDif_2_HF5("kernel_dif.hf5");
   writeBiasDif_2_HF5("bias_dif.hf5");
 #endif
@@ -167,5 +167,4 @@ STUB_GPU(ConvHashLayer);
 #endif
 
 INSTANTIATE_CLASS(ConvHashLayer);
-
 }  // namespace caffe

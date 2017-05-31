@@ -275,7 +275,7 @@ void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 			cur_tp_hash, cur_tp_offset, cur_tp_postag, tp_m_bar, tp_r_bar,
 			cur_mask, channels_, bt_dense_res);
 
-#if 1	//for debug
+#if DUMP_2_TXT	//for debug
 		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
 		hash_2_dense(cur_bt_hash, cur_bt_postag, cur_bt_offset, bt_m_bar, 
 			bt_r_bar, channels_, bt_dense_buf, bt_dense_res);
@@ -412,7 +412,7 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 			cur_tp_dif, cur_tp_postag, tp_m_bar, 
 			cur_mask, channels_);
 
-#if 1	//for debug
+#if DUMP_2_TXT	//for debug
 		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
 		hash_2_dense(cur_bt_dif, cur_bt_postag, cur_bt_offset, bt_m_bar,
 			bt_r_bar, channels_, bt_dense_buf, bt_dense_res);

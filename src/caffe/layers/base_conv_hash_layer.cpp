@@ -5,7 +5,6 @@
 #include "caffe/layers/base_conv_hash_layer.hpp"
 #include "caffe/util/MyMacro.h"
 
-#define DUMP_2_TXT 0
 
 namespace caffe {
 
