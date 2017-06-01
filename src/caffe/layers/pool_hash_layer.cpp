@@ -351,6 +351,9 @@ template <typename Dtype>
 void PoolHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top) 
 {
+
+	//printf("******************PoolHash forward begin\n");
+
 	//fill the channel and dense for next layer
 	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
 
@@ -372,6 +375,8 @@ void PoolHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	default:
 		LOG(FATAL) << "Unknown pooling method.";
 	}
+
+	//printf("******************PoolHash forward end\n");
 }
 
 
@@ -507,6 +512,8 @@ template <typename Dtype>
 void PoolHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) 
 {
+	//printf("******************PoolHash backward begin\n");
+
 	switch (this->layer_param_.pooling_param().pool()) {
 	case PoolingParameter_PoolMethod_MAX:
 		Backward_cpu_max(top, propagate_down,bottom);
@@ -520,6 +527,7 @@ void PoolHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	default:
 		LOG(FATAL) << "Unknown pooling method.";
 	}
+	//printf("******************PoolHash backward end\n");
 }
 
 #ifdef CPU_ONLY

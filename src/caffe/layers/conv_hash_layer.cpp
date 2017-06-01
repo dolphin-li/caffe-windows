@@ -14,6 +14,9 @@ void ConvHashLayer<Dtype>::compute_output_shape()
 template <typename Dtype>
 void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
+
+	//printf("******************ConvHash forward begin\n");
+
   const Dtype* weight = this->blobs_[0]->cpu_data();
   
   const float *batch_hash_ptr = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
@@ -67,12 +70,15 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   writeDenseKernel_2_HF5("kernel.hf5");
   writeBias_2_HF5("bias.hf5");
 #endif
+  //printf("******************ConvHash forward end\n");
 }
 
 template <typename Dtype>
 void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) 
 {
+	//printf("******************ConvHash backward begin\n");
+
   const Dtype* weight = this->blobs_[0]->cpu_data();
   Dtype* weight_diff = this->blobs_[0]->mutable_cpu_diff();
   //memset to zero, as the weight_diff will be accumulated within the batch
@@ -160,6 +166,7 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   writeDenseKernelDif_2_HF5("kernel_dif.hf5");
   writeBiasDif_2_HF5("bias_dif.hf5");
 #endif
+  //printf("******************ConvHash backward end\n");
 }
 
 #ifdef CPU_ONLY

@@ -271,6 +271,7 @@ public:
 	void initStructs(int n);
 	int load(FILE *fp);
 	int save(FILE *fp) const;
+	int save(const char* filename) const;
 public:
 	float *m_hash_data;		//bottom hash data
 	int m_dense_res;	//bottom dense res

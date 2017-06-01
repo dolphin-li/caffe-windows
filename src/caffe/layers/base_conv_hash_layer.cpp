@@ -530,6 +530,26 @@ void BaseConvHashLayer<Dtype>::backward_cpu_bias(float* bias, const float* out_c
 {
 	caffe_cpu_gemv<float>(CblasNoTrans, num_output_, defined_voxel_num, 1.,
 		out_col_buf, (const float*)bias_multiplier_.cpu_data(), 1., bias);
+
+#if 0
+	static int counter = 0;
+	char buf[128];
+	sprintf(buf,"bp_outbuf_%d.txt",counter++);
+	std::ofstream ofs(buf);
+	const float *outbuf_ptr = out_col_buf;
+	const int cols = defined_voxel_num;
+	const int rows = num_output_;
+	for (int row = 0; row < rows; row++)
+	{
+		for (int col = 0; col < cols; col++)
+		{
+			ofs << *outbuf_ptr << " ";
+			outbuf_ptr++;
+		}
+		ofs << std::endl;
+	}
+	ofs.close();
+#endif
 }
 
 #ifndef CPU_ONLY

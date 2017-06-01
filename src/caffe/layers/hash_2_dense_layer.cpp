@@ -94,6 +94,8 @@ template <typename Dtype>
 void Hash2DenseLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top) 
 {
+	//printf("******************Hash2Dense forward begin\n");
+
 	const float *bt_hash = (const float*)bottom[HASH_DATA_BLOB]->cpu_data();
 	const unsigned char*bt_offset = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
 	const PACKED_POSITION *bt_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
@@ -131,6 +133,8 @@ void Hash2DenseLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 		//to next dense
 		dense_buf += channel_spatial_dim;
 	}
+
+	//printf("******************Hash2Dense forward end\n");
 }
 
 
@@ -138,6 +142,8 @@ template <typename Dtype>
 void Hash2DenseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) 
 {
+	//printf("******************Hash2Dense backward begin\n");
+
 	float *bt_hash = (float*)bottom[HASH_DATA_BLOB]->mutable_cpu_diff();
 	const unsigned char*bt_offset = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
 	const PACKED_POSITION *bt_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
@@ -183,6 +189,8 @@ void Hash2DenseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 		//to next dense
 		dense_buf += channel_spatial_dim;
 	}
+
+	//printf("******************Hash2Dense backward end\n");
 }
 
 #ifdef CPU_ONLY

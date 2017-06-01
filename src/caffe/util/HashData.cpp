@@ -728,6 +728,18 @@ int CHierarchyHash::save(FILE *fp) const
 	return 1;
 }
 
+int CHierarchyHash::save(const char* filename) const
+{
+	FILE *fp = fopen(filename, "wb");
+	if (!fp)
+	{
+		printf("Error: failed to save hier hash to %s\n", filename);
+		return false;
+	}
+	int flag = save(fp);
+	fclose(fp);
+	return flag;
+}
 
 /*****************************************************/
 

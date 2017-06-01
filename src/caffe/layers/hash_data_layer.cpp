@@ -312,6 +312,15 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 			mBar_blob->mutable_cpu_data()[j] = (Dtype)m_bar;
 			rBar_blob->mutable_cpu_data()[j] = (Dtype)r_bar;
 			defNum_blob->mutable_cpu_data()[j] = (Dtype)defNum;
+
+			if (!defNum)
+			{
+				printf("Fatal error: defNum zero! cur row: %d, idx: %d\n",current_row_,idx);
+				
+				m_vpHierHashes[idx]->save("wrong_hierHash.hst");
+				exit(0);
+			}
+
 			defNumSum_blob->mutable_cpu_data()[j] = (Dtype)totalDefNum;
 			mSum_blob->mutable_cpu_data()[j] = (Dtype)batch_m;
 			rSum_blob->mutable_cpu_data()[j] = (Dtype)batch_r;
@@ -512,8 +521,9 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	//previously recorded m_batch_germ[i] will now refer to the new hashes.
 	//Thus some tail files in the last file will be thrown away
   
+#if 1	//NOTE: will cause bug here, when file switches, previously recorded m_batch_perm[i] is old index, which might > current size
 	m_batch_perm[i] = data_permutation_[current_row_];
-	
+#endif
 	//int data_dim = top[j]->count() / top[j]->shape(0);
 	//caffe_copy(data_dim,
 	//	&hash_blobs_[j]->cpu_data()[data_permutation_[current_row_]
@@ -522,9 +532,21 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     Next();
   }
 
+#if 1	//fix the bug
+  int hierhash_num = (int)(int)m_vpHierHashes.size();
+  for (int i = 0; i < batch_size; ++i) 
+  {
+	if (m_batch_perm[i]>= hierhash_num)
+	{
+		m_batch_perm[i] = m_batch_perm[i] % hierhash_num;
+	}
+  }
+#endif
+
+
   HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
 
-#if DUMP_2_TXT//for debug
+#if 0//for debug
   save_blobs_to_hashFiles(top, "test_hash_data_layer");
 #endif
 

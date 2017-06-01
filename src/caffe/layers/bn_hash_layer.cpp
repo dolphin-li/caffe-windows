@@ -344,6 +344,9 @@ template <typename Dtype>
 void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
 {
+	//printf("******************BNHash forward begin\n");
+
+
 	//forward channel and dense res
 	top[CHANNEL_BLOB]->mutable_cpu_data()[0] = bottom[CHANNEL_BLOB]->cpu_data()[0];
 	top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
@@ -422,6 +425,8 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
 
 	forward_temp2hash_cpu(bottom, top);
+
+	//printf("******************BNHash forward end\n");
 }
 
 template <typename Dtype>
@@ -429,6 +434,8 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) 
 {
+	//printf("******************BNHash backward begin\n");
+
 	const Dtype* top_diff = top[HASH_DATA_BLOB]->cpu_diff();
 	Dtype* bottom_diff = bottom[HASH_DATA_BLOB]->mutable_cpu_diff();
 	const int total_defNum = temp_.shape(1);
@@ -507,6 +514,8 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 		temp2_.mutable_cpu_data());
 	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
 	backward_temp2BottomDif_cpu(bottom, top);
+
+	//printf("******************BNHash backward end\n");
 }
 
 
