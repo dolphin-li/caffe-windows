@@ -369,7 +369,8 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 			memcpy(batch_posTag_ptr, m_vpHierHashes[idx]->m_vpStructs[si]->m_position_tag, sizeof(PACKED_POSITION)*m);
 			getValidPoses(batch_posTag_ptr, batch_validPos_ptr, m);
 			for (int tmp_i = 0; tmp_i < defNum; tmp_i++)
-				batch_volIdx_ptr[tmp_i] = (VolumeIndexType)idx;
+				batch_volIdx_ptr[tmp_i] = (VolumeIndexType)j;
+
 			batch_offset_ptr += r * 3;
 			batch_posTag_ptr += m;
 			batch_validPos_ptr += defNum;
@@ -511,6 +512,9 @@ template <typename Dtype>
 void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   const int batch_size = this->layer_param_.hash_data_param().batch_size();
+  //current_row_ = 4096;
+  //LOG(INFO) << "current file: " << current_file_ << " " << file_permutation_[current_file_]
+	 // << "current_row_: " << current_row_;
   for (int i = 0; i < batch_size; ++i) {
     while (Skip()) {
       Next();

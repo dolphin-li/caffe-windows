@@ -15,12 +15,19 @@ namespace caffe {
 		float *top_batch_hash_ptr = (float*)top[HASH_DATA_BLOB]->mutable_gpu_data();
 		const int batch_num = bottom[M_BAR_BLOB]->shape(0);
 		const int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+
+		//forward channel and dense res
+		top[CHANNEL_BLOB]->mutable_cpu_data()[0] = (Dtype)num_output_;
+		top[DENSE_RES_BLOB]->mutable_cpu_data()[0] = bottom[DENSE_RES_BLOB]->cpu_data()[0];
+
 		for (int i = 0; i < batch_num; ++i)
 		{
 			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
 			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
 			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
 			float *out_buf = (float*)out_col_buffer_.mutable_gpu_data();
+
+			CHECK_GT(defNum, 0);
 
 			forward_gpu_gemm(batch_hash_ptr, batch_offset_ptr, batch_posTag_ptr, batch_validPos_ptr, m_bar, r_bar,
 				channels_, num_output_, defNum, dense_res, out_buf);
@@ -77,6 +84,8 @@ namespace caffe {
 			const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
 			const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
 			const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+
+			CHECK_GT(defNum, 0);
 
 			//convert top dif to out_col_buf
 			top_hash2col_gpu(top_hash_dif, posTag_ptr, validPos_ptr, m_bar,

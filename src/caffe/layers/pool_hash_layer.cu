@@ -147,6 +147,7 @@ namespace caffe {
 		const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
 		const int total_top_defNUm = bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[
 			bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->count() - 1];
+		CHECK_GT(total_top_defNUm, 0);
 		const int groups = (channels_ + CHANNEL_GROUP_NUM - 1) / CHANNEL_GROUP_NUM;
 		const int nThreads = total_top_defNUm * groups;
 		const int channelPerGroup = (channels_ + groups - 1) / groups;
@@ -211,6 +212,7 @@ namespace caffe {
 			bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
 		const int tp_totalDefNum = bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[
 			bottom[DEFNUM_SUM_BLOB + HASH_STRUCTURE_SIZE]->count()-1];
+		CHECK_GT(tp_totalDefNum, 0);
 
 		const int *mask = max_idx_.gpu_data();
 
