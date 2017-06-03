@@ -52,6 +52,21 @@ class Batch {
   Blob<Dtype> data_, label_, weight_;
 };
 
+//added by tianjia
+template <typename Dtype>
+class GeneralBatch {
+public:
+	void init(int blobNum)
+	{
+		blobs_.resize(blobNum);
+		for (int i = 0; i < blobNum; i++)
+		{
+			blobs_[i].reset(new Blob<Dtype>());
+		}
+	}
+	vector<shared_ptr<Blob<Dtype> > > blobs_;
+};
+
 template <typename Dtype>
 class BasePrefetchingDataLayer :
     public BaseDataLayer<Dtype>, public InternalThread {

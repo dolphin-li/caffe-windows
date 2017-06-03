@@ -10,18 +10,16 @@
 
 #include "caffe/layers/base_data_layer.hpp"
 #include "caffe/util/HashData.h"
+
+#include "caffe/internal_thread.hpp"
+#include "caffe/util/blocking_queue.hpp"
 namespace caffe {
 
-/**
- * @brief Provides data to the Net from HDF5 files.
- *
- * TODO(dox): thorough documentation for Forward and proto params.
- */
+
 template <typename Dtype>
-class HashDataLayer : public Layer<Dtype> {
+class HashDataLayer : public Layer<Dtype>, public InternalThread {
  public:
-  explicit HashDataLayer(const LayerParameter& param)
-	  : Layer<Dtype>(param), offset_() { channels_ = 0; }
+  explicit HashDataLayer(const LayerParameter& param);
   virtual ~HashDataLayer();
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
@@ -78,6 +76,16 @@ public:
   //std::vector<HashData> m_hashes;
   std::vector<CHierarchyHash *> m_vpHierHashes;
   std::vector<unsigned int> m_batch_perm;	//batch permutation
+
+  //for multithread acceleration
+public:
+	virtual void InternalThreadEntry();
+	void fetch_batch(GeneralBatch<Dtype>* batch);
+public:
+	vector<shared_ptr<GeneralBatch<Dtype> > > prefetch_;
+	BlockingQueue<GeneralBatch<Dtype>*> prefetch_free_;
+	BlockingQueue<GeneralBatch<Dtype>*> prefetch_full_;
+	GeneralBatch<Dtype>* prefetch_current_;
 };
 
 }  // namespace caffe
