@@ -191,6 +191,8 @@ void PoolHashLayer<Dtype>::forward_cpu_max(const float *bottom_hash, const unsig
 	const int bottom_m2 = bottom_m_bar * bottom_m_bar;
 	//init mask
 	caffe_set(top_m*channels, -1, mask);
+	//to be safe, init out to zero
+	memset(top_hash, 0, sizeof(float)*top_m*channels);
 	for (int v = 0; v < top_m; v++)
 	{
 		//if the hash voxel is undefined, skip
@@ -270,6 +272,17 @@ void PoolHashLayer<Dtype>::forward_cpu_max(const float *bottom_hash, const unsig
 				}
 			}
 		}
+		tp_hash_ptr = &top_hash[v];
+		//init to min
+		if (*tp_hash_ptr == -FLT_MAX)
+		{
+			printf("======ERROR: impossible happend!======\n");
+			for (int c = 0; c<channels; c++)
+			{
+				*tp_hash_ptr = 0;
+				tp_hash_ptr += top_m;
+			}
+		}
 	}
 }
 
@@ -312,7 +325,7 @@ void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 			cur_tp_hash, cur_tp_offset, cur_tp_postag, tp_m_bar, tp_r_bar,
 			cur_mask, channels_, bt_dense_res);
 
-#if DUMP_2_TXT	//for debug
+#if 0	//for debug
 		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
 		hash_2_dense(cur_bt_hash, cur_bt_postag, cur_bt_offset, bt_m_bar, 
 			bt_r_bar, channels_, bt_dense_buf, bt_dense_res);
@@ -343,6 +356,31 @@ void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 		tp_offset += tp_r * 3;
 		tp_posTag += tp_m;
 	}
+
+#if 0
+	BatchHashData bottom_batch;
+	blobs_2_batchHash(bottom, bottom_batch);
+	bottom_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	//writeBatchHash_2_hashFiles(bottom_batch, dense_res, "bottom_pool");
+	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "bottom_hashPool");
+
+	std::vector<Blob<float> *> structed_top(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
+	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top[CHANNEL_BLOB] = top[CHANNEL_BLOB];
+	structed_top[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
+	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[R_BAR_BLOB] = bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[DEFNUM_BLOB] = bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
+	BatchHashData top_batch;
+	blobs_2_batchHash(structed_top, top_batch);
+	top_batch.m_channels = (int)top[CHANNEL_BLOB]->cpu_data()[0];
+	dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
+	writeBatchHash_2_denseFiles(top_batch, dense_res, "top_hashPool");
+#endif
+
 }
 
 // TODO(Yangqing): Is there a faster way to do pooling in the channel-first
@@ -428,7 +466,7 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 	const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
 	const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
 
-	int *mask = max_idx_.mutable_cpu_data();
+	const int *mask = max_idx_.cpu_data();
 
 	int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
 	const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
@@ -444,7 +482,7 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 
 
 		const float *cur_tp_dif = tp_hash_dif;
-		int *cur_mask = mask;
+		const int *cur_mask = mask;
 		const unsigned char*cur_tp_offset = tp_offset;
 		const PACKED_POSITION *cur_tp_postag = tp_posTag;
 		const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
@@ -454,7 +492,7 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 			cur_tp_dif, cur_tp_postag, tp_m_bar, 
 			cur_mask, channels_);
 
-#if DUMP_2_TXT	//for debug
+#if 0	//for debug
 		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
 		hash_2_dense(cur_bt_dif, cur_bt_postag, cur_bt_offset, bt_m_bar,
 			bt_r_bar, channels_, bt_dense_buf, bt_dense_res);
@@ -474,13 +512,13 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 		float *bt_dense_debug = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
 		bp_max_dense(tp_dense_buf, tp_idx_buf, bt_dense_debug, tp_dense_res, bt_dense_res, channels_);
 
-		//for (int tt=0;tt<bt_dense_res * bt_dense_res * bt_dense_res * channels_;tt++)
-		//{
-		//	if (bt_dense_debug[tt]!=bt_dense_buf[tt])
-		//	{
-		//		printf("Error!\n");
-		//	}
-		//}
+		for (int tt = 0; tt < bt_dense_res * bt_dense_res * bt_dense_res * channels_; tt++)
+		{
+			if (bt_dense_debug[tt] != bt_dense_buf[tt])
+			{
+				printf("Error!\n");
+			}
+		}
 
 		sprintf(buf, "bottom_dif_dense_%d.grid", i);
 		writeDense_2_Grid(bt_dense_debug, bt_dense_res, channels_, buf);

@@ -398,6 +398,11 @@ void topMask_2_dense(const int *top_mask, const PACKED_POSITION *top_posTags, co
 		for (int c = 0; c < channels; c++)
 		{
 			int bt_hash_idx = *cur_mask_ptr;
+			if (bt_hash_idx < 0)
+			{
+				printf("Fatal error: impossible!\n");
+				exit(0);
+			}
 			int bx, by, bz;
 			xyz_from_pack(bottom_posTags[bt_hash_idx], bx, by, bz);
 			*cur_dense_ptr = NXYZ2I(bx, by, bz, bottom_res, bottom_res*bottom_res);
@@ -792,6 +797,47 @@ int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char 
 		batch_posTag_ptr += m;
 	}
 	delete[]dense_buf;
+	return 1;
+}
+
+
+int writeBatchHash_2_hashFiles(const BatchHashData &batch, int res, const char *prefix)
+{
+	float *batch_hash_ptr = batch.m_hash_data;
+	unsigned char *batch_offset_ptr = batch.m_offset_data;
+	PACKED_POSITION *batch_posTag_ptr = batch.m_position_tag;
+	char buf[128];
+	for (int i = 0; i < (int)batch.m_mBars.size(); i++)
+	{
+		int m_bar = batch.m_mBars[i];
+		int r_bar = batch.m_rBars[i];
+		int m = m_bar*m_bar*m_bar;
+		int r = r_bar*r_bar*r_bar;
+
+		float *hash_data = batch_hash_ptr;
+		unsigned char *offset_data = batch_offset_ptr;
+		PACKED_POSITION *pos_tags = batch_posTag_ptr;
+
+		HashData one_hash;
+		one_hash.m_mBar = m_bar;
+		one_hash.m_rBar = r_bar;
+		one_hash.m_defNum = 0;//no use, will calculated when loading
+		one_hash.m_offset_data = offset_data;
+		one_hash.m_position_tag = batch_posTag_ptr;
+		one_hash.m_channels = batch.m_channels;
+		one_hash.m_dense_res = res;
+		one_hash.m_hash_data = hash_data;
+
+		
+		sprintf(buf, "%s_%d.psh", prefix, i);
+
+		saveHash(one_hash, buf);
+
+
+		batch_hash_ptr += m*batch.m_channels;
+		batch_offset_ptr += r * 3;
+		batch_posTag_ptr += m;
+	}
 	return 1;
 }
 

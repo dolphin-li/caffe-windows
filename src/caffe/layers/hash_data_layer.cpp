@@ -8,6 +8,8 @@
 #include "caffe/util/MyMacro.h"
 #include <boost/thread.hpp>
 
+#define MULT_THREAD 0
+
 namespace caffe {
 
 	template <typename Dtype>
@@ -16,17 +18,21 @@ namespace caffe {
 		prefetch_free_(), prefetch_full_(), prefetch_current_(NULL) 
 	{
 		channels_ = 0; 
+#if MULT_THREAD
 		for (int i = 0; i < prefetch_.size(); ++i) 
 		{
 			prefetch_[i].reset(new GeneralBatch<Dtype>());
 			prefetch_free_.push(prefetch_[i].get());
 		}
+#endif
 	}
 
 template <typename Dtype>
 HashDataLayer<Dtype>::~HashDataLayer<Dtype>() 
 {
+#if MULT_THREAD
 	this->StopInternalThread();
+#endif
 	destroyHierHashes();
 }
 
@@ -487,6 +493,7 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   top[label_blob_idx]->Reshape(top_label_shape);
 
 
+#if MULT_THREAD
   /******added for multi thread******/
   const int top_blob_num = (int)top.size();
  for (int i=0;i<(int)prefetch_.size();i++)
@@ -522,6 +529,7 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 #endif
   StartInternalThread();
   DLOG(INFO) << "Prefetch initialized.";
+#endif
 }
 
 template <typename Dtype>
@@ -558,6 +566,7 @@ void HashDataLayer<Dtype>::Next()
   offset_++;
 }
 
+#if MULT_THREAD
 template <typename Dtype>
 void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top) {
@@ -573,65 +582,66 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 		top[i]->set_cpu_data(prefetch_current_->blobs_[i]->mutable_cpu_data());
 	}
 }
-
+#else
 /********************************OLD: single thread***********************************/
-//template <typename Dtype>
-//void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-//      const vector<Blob<Dtype>*>& top) {
-//  const int batch_size = this->layer_param_.hash_data_param().batch_size();
-//  //current_row_ = 4096;
-//  //LOG(INFO) << "current file: " << current_file_ << " " << file_permutation_[current_file_]
-//	 // << "current_row_: " << current_row_;
-//  for (int i = 0; i < batch_size; ++i) {
-//    while (Skip()) {
-//      Next();
-//    }
-//
-//	//NOTE: currently we simply record current_row_ as m_batch_perm[i].
-//	//It has a problem: when loading a new file during the for-loop, 
-//	//previously recorded m_batch_germ[i] will now refer to the new hashes.
-//	//Thus some tail files in the last file will be thrown away
-//  
-//#if 1	//NOTE: will cause bug here, when file switches, previously recorded m_batch_perm[i] is old index, which might > current size
-//	m_batch_perm[i] = data_permutation_[current_row_];
-//#endif
-//	//int data_dim = top[j]->count() / top[j]->shape(0);
-//	//caffe_copy(data_dim,
-//	//	&hash_blobs_[j]->cpu_data()[data_permutation_[current_row_]
-//	//	* data_dim], &top[j]->mutable_cpu_data()[i * data_dim]);
-//    
-//    Next();
-//  }
-//
-//#if 1	//fix the bug
-//  int hierhash_num = (int)(int)m_vpHierHashes.size();
-//  for (int i = 0; i < batch_size; ++i) 
-//  {
-//	if (m_batch_perm[i]>= hierhash_num)
-//	{
-//		m_batch_perm[i] = m_batch_perm[i] % hierhash_num;
-//	}
-//  }
-//#endif
-//
-//
-//  HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
-//
-//#if 0//for debug
-//  save_blobs_to_hashFiles(top, "test_hash_data_layer");
-//#endif
-//
-//  //send labels
-//  const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
-//  int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
-//  for (int i = 0; i < batch_size; ++i)
-//  {
-//	  int data_dim = top[label_blob_idx]->count() / top[label_blob_idx]->shape(0);
-//	  caffe_copy(data_dim,
-//		  &label_blob_.cpu_data()[m_batch_perm[i]
-//		  * data_dim], &top[label_blob_idx]->mutable_cpu_data()[i * data_dim]);
-//  }
-//}
+template <typename Dtype>
+void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top) {
+  const int batch_size = this->layer_param_.hash_data_param().batch_size();
+  //current_row_ = 4096;
+  //LOG(INFO) << "current file: " << current_file_ << " " << file_permutation_[current_file_]
+	 // << "current_row_: " << current_row_;
+  for (int i = 0; i < batch_size; ++i) {
+    while (Skip()) {
+      Next();
+    }
+
+	//NOTE: currently we simply record current_row_ as m_batch_perm[i].
+	//It has a problem: when loading a new file during the for-loop, 
+	//previously recorded m_batch_germ[i] will now refer to the new hashes.
+	//Thus some tail files in the last file will be thrown away
+  
+#if 1	//NOTE: will cause bug here, when file switches, previously recorded m_batch_perm[i] is old index, which might > current size
+	m_batch_perm[i] = data_permutation_[current_row_];
+#endif
+	//int data_dim = top[j]->count() / top[j]->shape(0);
+	//caffe_copy(data_dim,
+	//	&hash_blobs_[j]->cpu_data()[data_permutation_[current_row_]
+	//	* data_dim], &top[j]->mutable_cpu_data()[i * data_dim]);
+    
+    Next();
+  }
+
+#if 1	//fix the bug
+  int hierhash_num = (int)(int)m_vpHierHashes.size();
+  for (int i = 0; i < batch_size; ++i) 
+  {
+	if (m_batch_perm[i]>= hierhash_num)
+	{
+		m_batch_perm[i] = m_batch_perm[i] % hierhash_num;
+	}
+  }
+#endif
+
+
+  HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
+
+#if 0//for debug
+  save_blobs_to_hashFiles(top, "test_hash_data_layer");
+#endif
+
+  //send labels
+  const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
+  int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
+  for (int i = 0; i < batch_size; ++i)
+  {
+	  int data_dim = top[label_blob_idx]->count() / top[label_blob_idx]->shape(0);
+	  caffe_copy(data_dim,
+		  &label_blob_.cpu_data()[m_batch_perm[i]
+		  * data_dim], &top[label_blob_idx]->mutable_cpu_data()[i * data_dim]);
+  }
+}
+#endif
 
 template <typename Dtype>
 void HashDataLayer<Dtype>::save_blobs_to_hashFiles(const std::vector<Blob<Dtype>*>& top_blobs, const char *main_body)

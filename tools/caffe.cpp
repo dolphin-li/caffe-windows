@@ -445,7 +445,7 @@ int time() {
 RegisterBrewFunction(time);
 
 /**************************For testing hash**************************/
-#define GPU_DEBUG
+//#define GPU_DEBUG
 const static float DATA_CHECK_EPS = 1e-6f;
 const static bool DATA_ENABLE_SHUFFLE = false; //LDP: to compare CPU and GPU data layer, turn the shuffle off
 std::vector<Blob<float> *> create_blobs(int n, const std::vector<Blob<float> *>* shapeLike = nullptr,
@@ -495,7 +495,7 @@ void release_blobs(std::vector<Blob<float> *>& blobs)
 void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 {
 	std::vector<Blob<float> *> bottom; //no use
-	const int struct_num = 3;
+	const int struct_num = 5;
 	int top_blob_num = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * struct_num + 1;
 	top.resize(top_blob_num);
 	for (int i = 0; i < top_blob_num; i++)
@@ -504,8 +504,8 @@ void test_hash_data_layer_forward(std::vector<Blob<float> *> &top)
 	}
 
 	caffe::HashDataParameter *hash_data_param = new caffe::HashDataParameter;
-	const int batch_size = 10;
-	hash_data_param->set_source("HashLayerList.txt");
+	const int batch_size = 50;
+	hash_data_param->set_source("train.txt");
 	hash_data_param->set_batch_size(batch_size);
 	hash_data_param->set_shuffle(DATA_ENABLE_SHUFFLE);
 
@@ -752,6 +752,33 @@ caffe::PoolHashLayer<float> *test_pool_layer_forward(const std::vector<Blob<floa
 	pool_hash_layer->SetUp(bottom, top);
 	//forward
 	pool_hash_layer->Forward(bottom, top);
+
+
+#if 0
+	BatchHashData bottom_batch;
+	blobs_2_batchHash(bottom, bottom_batch);
+	bottom_batch.m_channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+	int dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
+	//writeBatchHash_2_hashFiles(bottom_batch, dense_res, "bottom_pool");
+	writeBatchHash_2_denseFiles(bottom_batch, dense_res, "bottom_pool");
+
+	std::vector<Blob<float> *> structed_top(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
+	structed_top[HASH_DATA_BLOB] = top[HASH_DATA_BLOB];
+	structed_top[CHANNEL_BLOB] = top[CHANNEL_BLOB];
+	structed_top[DENSE_RES_BLOB] = top[DENSE_RES_BLOB];
+	structed_top[OFFSET_BLOB] = bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[POSTAG_BLOB] = bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[M_BAR_BLOB] = bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[R_BAR_BLOB] = bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE];
+	structed_top[DEFNUM_BLOB] = bottom[DEFNUM_BLOB + HASH_STRUCTURE_SIZE];
+	BatchHashData top_batch;
+	blobs_2_batchHash(structed_top, top_batch);
+	top_batch.m_channels = (int)top[CHANNEL_BLOB]->cpu_data()[0];
+	dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
+	//writeBatchHash_2_hashFiles(top_batch, dense_res, "top_pool");
+	writeBatchHash_2_denseFiles(top_batch, dense_res, "top_pool");
+#endif
+
 #ifdef GPU_DEBUG
 	// forward gpu
 	Caffe::set_mode(Caffe::Brew::GPU);
@@ -1124,7 +1151,7 @@ void test_hash2dense_layer_backward(caffe::Hash2DenseLayer<float> *hash2dense_la
 void test_hash()
 {
 	printf("Testing hash data layer...\n");
-	const char *root_dir = "D:\\Projects\\TestHCNN\\testData";
+	const char *root_dir = "E:\\HCNN\\Projects\\test";
 	SetCurrentDirectoryA(root_dir);
 	
 	char Buffer[128];

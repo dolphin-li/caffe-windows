@@ -283,6 +283,7 @@ public:
 int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, const char *filename);
 
 int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix);
+int writeBatchHash_2_hashFiles(const BatchHashData &batch, int res, const char *prefix);
 
 int writeDense_2_Grid(const float *dense_data, int res, int channels, const char *filename);
 int writeDense_2_Grid(const int *dense_data, int res, int channels, const char *filename);
