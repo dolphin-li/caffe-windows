@@ -280,8 +280,11 @@ public:
 };
 
 
+int writeDense_2_TXT(const float *dense_data, int n, const char *filename);
+int writeDense_2_TXT(const int *dense_data, int n, const char *filename);
+int writeDense_2_TXT(const VolumeIndexType *dense_data, int n, const char *filename);
 int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, const char *filename);
-
+int writeDense_2_BIN(const float *dense_data, int data_size, const char *filename);
 int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix);
 int writeBatchHash_2_hashFiles(const BatchHashData &batch, int res, const char *prefix);
 

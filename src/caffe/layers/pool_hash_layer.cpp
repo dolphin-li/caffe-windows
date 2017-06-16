@@ -415,6 +415,42 @@ void PoolHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	}
 
 	//printf("******************PoolHash forward end\n");
+
+
+#if TIANJIA_DEBUG_GPU	//debug GPU
+	printf("\n===============CHECKING PoolHash Forward GPU CPU======================\n");
+	vector<Blob<Dtype>*>  gpu_top(top.size());
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		gpu_top[i] = new Blob<Dtype>();
+		gpu_top[i]->ReshapeLike(*top[i]);
+	}
+
+	cudaThreadSynchronize();
+	Forward_gpu(bottom, gpu_top);
+	cudaThreadSynchronize();
+	//check
+	float eps = 1e-6f;
+
+
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		for (int j = 0; j < top[i]->count(); j++)
+		{
+			//if (fabs(top[i]->cpu_data()[j] - gpu_top[i]->cpu_data()[j]) / (fabs(top[i]->cpu_data()[j]) + 1e-7f) > eps)
+			if (fabs(top[i]->cpu_data()[j] - gpu_top[i]->cpu_data()[j]) > eps)
+			{
+				printf("Error: POOLHASH Forward cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", top[i]->cpu_data()[j], gpu_top[i]->cpu_data()[j]);
+			}
+		}
+	}
+
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		delete gpu_top[i];
+	}
+	printf("===============CHECKING PoolHash Forward GPU CPU  DONE======================\n");
+#endif
 }
 
 
@@ -566,6 +602,44 @@ void PoolHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 		LOG(FATAL) << "Unknown pooling method.";
 	}
 	//printf("******************PoolHash backward end\n");
+
+#if TIANJIA_DEBUG_GPU	//debug GPU
+	printf("\n===============CHECKING POOLHASH Backward GPU CPU======================\n");
+
+
+	vector<Blob<Dtype>*>  gpu_bottom(bottom.size());
+	for (int i = 0; i < (int)bottom.size(); i++)
+	{
+		gpu_bottom[i] = new Blob<Dtype>();
+		gpu_bottom[i]->ReshapeLike(*bottom[i]);
+		caffe::caffe_copy(gpu_bottom[i]->count(), bottom[i]->cpu_data(), gpu_bottom[i]->mutable_cpu_data());
+		caffe::caffe_copy(gpu_bottom[i]->count(), bottom[i]->cpu_diff(), gpu_bottom[i]->mutable_cpu_diff());
+	}
+
+	cudaThreadSynchronize();
+	Backward_gpu(top, propagate_down, gpu_bottom);
+	cudaThreadSynchronize();
+	//check
+	float eps = 1e-6f;
+
+	for (int i = 0; i < (int)bottom.size(); i++)
+	{
+		for (int j = 0; j < bottom[i]->count(); j++)
+		{
+			//if (fabs(bottom[i]->cpu_diff()[j] - gpu_bottom[i]->cpu_diff()[j]) / (fabs(bottom[i]->cpu_diff()[j]) + 1e-7f) > eps)
+			if (fabs(bottom[i]->cpu_diff()[j] - gpu_bottom[i]->cpu_diff()[j]) > eps)
+			{
+				printf("Error: POOLHASH Backward cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", bottom[i]->cpu_diff()[j], gpu_bottom[i]->cpu_diff()[j]);
+			}
+		}
+	}
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		delete gpu_bottom[i];
+	}
+
+	printf("===============CHECKING POOLHASH Backward GPU CPU DONE======================\n");
+#endif
 }
 
 #ifdef CPU_ONLY

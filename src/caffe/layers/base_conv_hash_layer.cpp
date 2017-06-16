@@ -306,6 +306,9 @@ void BaseConvHashLayer<Dtype>::reshape_colBuf(const vector<Blob<Dtype>*>& bottom
 			break;
 		case Caffe::CPU:
 			caffe_set(bias_multiplier_.count(), Dtype(1), bias_multiplier_.mutable_cpu_data());
+#if TIANJIA_DEBUG_GPU
+			caffe_gpu_set(bias_multiplier_.count(), Dtype(1), bias_multiplier_.mutable_gpu_data());
+#endif
 			break;
 		case Caffe::GPU:
 			caffe_gpu_set(bias_multiplier_.count(), Dtype(1), bias_multiplier_.mutable_gpu_data());

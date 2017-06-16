@@ -71,6 +71,43 @@ void ConvHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   writeBias_2_HF5("bias.hf5");
 #endif
   //printf("******************ConvHash forward end\n");
+
+#if TIANJIA_DEBUG_GPU	//debug GPU
+  printf("\n===============CHECKING ConvHash Forward GPU CPU======================\n");
+  vector<Blob<Dtype>*>  gpu_top(top.size());
+  for (int i = 0; i < (int)top.size(); i++)
+  {
+	  gpu_top[i] = new Blob<Dtype>();
+	  gpu_top[i]->ReshapeLike(*top[i]);
+  }
+
+  cudaThreadSynchronize();
+  this->blobs_[0]->mutable_gpu_data();
+  this->blobs_[1]->mutable_gpu_data();
+  Forward_gpu(bottom,gpu_top);
+  cudaThreadSynchronize();
+  //check
+  float eps = 1e-5f;
+
+  
+  for (int i = 0; i < (int)top.size(); i++)
+  {
+	  for (int j = 0; j < top[i]->count(); j++)
+	  {
+		  //if (fabs(top[i]->cpu_data()[j] - gpu_top[i]->cpu_data()[j])/(fabs(top[i]->cpu_data()[j])+1e-7f) > eps)
+		  if (fabs(top[i]->cpu_data()[j] - gpu_top[i]->cpu_data()[j]) > eps)
+		  {
+			  printf("Error: ConvHash Forward  cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", top[i]->cpu_data()[j], gpu_top[i]->cpu_data()[j]);
+		  }
+	  }
+  }
+ 
+  for (int i = 0; i < (int)top.size(); i++)
+  {
+	 delete gpu_top[i];
+  }
+  printf("===============CHECKING ConvHash Forward GPU CPU  DONE======================\n");
+#endif
 }
 
 template <typename Dtype>
@@ -120,6 +157,20 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 	  conv_hash2col_cpu(bottom_data, offset_data, pos_tags, kernel_shape_.cpu_data(),
 		  m_bar, r_bar, channels_, defNum, dense_res, (float*)col_buffer_.mutable_cpu_data());
 
+#if 0
+	  {
+		  char buf[128];
+		  sprintf(buf,"cpu_out_buf_%d.bin",i);
+		  writeDense_2_BIN((const float*)out_col_buffer_.cpu_data(), num_output_*defNum, buf);
+
+		  sprintf(buf, "cpu_buf_%d.bin", i);
+		  const int kernel_dim = kernel_shape_.cpu_data()[0] * kernel_shape_.cpu_data()[1] * kernel_shape_.cpu_data()[2];
+		  const int rows = kernel_dim * channels_;
+		  const int cols = defNum;
+		  writeDense_2_BIN((const float*)col_buffer_.cpu_data(), rows*cols, buf);
+	  }
+#endif
+
 	  // Bias gradient, if necessary.
 	  if (this->bias_term_ && this->param_propagate_down_[1]) 
 	  {
@@ -132,6 +183,7 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 				this->weight_cpu_gemm((const float*)col_buffer_.cpu_data(),(const float*)out_col_buffer_.cpu_data(),
 					(float*)weight_diff,channels_,num_output_,defNum);
 			}
+
 			// gradient w.r.t. bottom data, if necessary.
 			//if (propagate_down[i]) 
 			{
@@ -167,6 +219,70 @@ void ConvHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   writeBiasDif_2_HF5("bias_dif.hf5");
 #endif
   //printf("******************ConvHash backward end\n");
+
+#if TIANJIA_DEBUG_GPU	//debug GPU
+  printf("\n===============CHECKING ConvHash Backward GPU CPU======================\n");
+
+  //weight and bias
+  Blob<Dtype> tmp_blobs[2];
+  for (int i = 0; i < 2; i++)
+  {
+	  tmp_blobs[i].ReshapeLike(*this->blobs_[i]);
+	  caffe::caffe_copy(this->blobs_[i]->count(), this->blobs_[i]->cpu_data(), tmp_blobs[i].mutable_cpu_data());
+	  caffe::caffe_copy(this->blobs_[i]->count(), this->blobs_[i]->cpu_diff(), tmp_blobs[i].mutable_cpu_diff());
+  }
+
+
+  vector<Blob<Dtype>*>  gpu_bottom(bottom.size());
+  for (int i = 0; i < (int)bottom.size(); i++)
+  {
+	  gpu_bottom[i] = new Blob<Dtype>();
+	  gpu_bottom[i]->ReshapeLike(*bottom[i]);
+	  caffe::caffe_copy(gpu_bottom[i]->count(), bottom[i]->cpu_data(), gpu_bottom[i]->mutable_cpu_data());
+	  caffe::caffe_copy(gpu_bottom[i]->count(), bottom[i]->cpu_diff(), gpu_bottom[i]->mutable_cpu_diff());
+  }
+
+  cudaThreadSynchronize();
+  this->blobs_[0]->mutable_gpu_data();
+  this->blobs_[1]->mutable_gpu_data();
+  Backward_gpu(top, propagate_down,gpu_bottom);
+  cudaThreadSynchronize();
+  //check
+  float eps = 1e-5f;
+
+  for (int i = 0; i < 2; i++)
+  {
+	  printf("\n*****Testing blobs %d *********\n",i);
+	  for (int j = 0; j < tmp_blobs[i].count(); j++)
+	  {
+		  //if (fabs(tmp_blobs[i].cpu_diff()[j] - this->blobs_[i]->cpu_diff()[j]) / (fabs(tmp_blobs[i].cpu_diff()[j]) + 1e-7f) > eps)
+		  if (fabs(tmp_blobs[i].cpu_diff()[j] - this->blobs_[i]->cpu_diff()[j]) > eps)
+		  {
+			  printf("Error: cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", tmp_blobs[i].cpu_diff()[j], this->blobs_[i]->cpu_diff()[j]);
+		  }
+	  }
+	  printf("*****done*********\n", i);
+  }
+
+
+  for (int i = 0; i < (int)bottom.size(); i++)
+  {
+	  for (int j = 0; j < bottom[i]->count(); j++)
+	  {
+		  //if (fabs(bottom[i]->cpu_diff()[j] - gpu_bottom[i]->cpu_diff()[j])/(fabs(bottom[i]->cpu_diff()[j])+1e-7f) > eps)
+		  if (fabs(bottom[i]->cpu_diff()[j] - gpu_bottom[i]->cpu_diff()[j]) > eps)
+		  {
+			 printf("Error: ConvHash Backward cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", bottom[i]->cpu_diff()[j], gpu_bottom[i]->cpu_diff()[j]);
+		  }
+	  }
+  }
+  for (int i = 0; i < (int)top.size(); i++)
+  {
+	  delete gpu_bottom[i];
+  }
+
+  printf("===============CHECKING ConvHash Backward GPU CPU DONE======================\n");
+#endif
 }
 
 #ifdef CPU_ONLY

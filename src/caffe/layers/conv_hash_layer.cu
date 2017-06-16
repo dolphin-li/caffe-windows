@@ -95,6 +95,20 @@ namespace caffe {
 			conv_hash2col_gpu(bt_hash, offset_ptr, posTag_ptr, validPos_ptr, kernel_shape_.cpu_data(),
 				m_bar, r_bar, channels_, defNum, dense_res, (float*)col_buffer_.mutable_gpu_data());
 
+#if 0
+			{
+				char buf[128];
+				sprintf(buf, "gpu_out_buf_%d.bin", i);
+				writeDense_2_BIN((const float*)out_col_buffer_.cpu_data(), num_output_*defNum, buf);
+
+				sprintf(buf, "gpu_buf_%d.bin", i);
+				const int kernel_dim = kernel_shape_.cpu_data()[0] * kernel_shape_.cpu_data()[1] * kernel_shape_.cpu_data()[2];
+				const int rows = kernel_dim * channels_;
+				const int cols = defNum;
+				writeDense_2_BIN((const float*)col_buffer_.cpu_data(), rows*cols, buf);
+			}
+#endif
+
 			// Bias gradient, if necessary.
 			if (this->bias_term_ && this->param_propagate_down_[1])
 				this->backward_gpu_bias((float*)bias_diff, (const float*)out_col_buffer_.gpu_data(), defNum);
@@ -106,6 +120,7 @@ namespace caffe {
 					this->weight_gpu_gemm((const float*)col_buffer_.gpu_data(), (const float*)out_col_buffer_.gpu_data(),
 						(float*)weight_diff, channels_, num_output_, defNum);
 				}
+
 				// gradient w.r.t. bottom data, if necessary.
 				//if (propagate_down[i]) 
 				{

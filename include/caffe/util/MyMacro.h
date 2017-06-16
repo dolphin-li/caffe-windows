@@ -35,4 +35,5 @@ if (ptr) { delete[]ptr; ptr = NULL; }
 #define R_SUM_BLOB 12	// r_sum[i] = sum(r(0:i-1)), where r=r_bar*r_bar*r_bar
 
 #define DUMP_2_TXT 0
+#define TIANJIA_DEBUG_GPU 0
 #endif

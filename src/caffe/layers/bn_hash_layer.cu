@@ -89,9 +89,11 @@ namespace caffe {
 		const Dtype* m_sum_ptr = bottom[M_SUM_BLOB]->gpu_data();
 		const Dtype* m_bar_ptr = bottom[M_BAR_BLOB]->gpu_data();
 		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB]->gpu_data();
+		//printf("BN forward gpu: %d %d\n",total_def_num, channels_);
 		batch_temp2hash_kernel << <CAFFE_GET_BLOCKS(total_def_num*channels_), CAFFE_CUDA_NUM_THREADS >> > (
 			hash, validPos, m_sum_ptr, m_bar_ptr, channels_, total_def_num, volIdx_ptr, temp
 			);
+		//writeDense_2_TXT((const float*)top[HASH_DATA_BLOB]->cpu_data(), top[HASH_DATA_BLOB]->count(), "gpu_top.txt");
 	}
 
 	template <typename Dtype>
@@ -112,6 +114,7 @@ namespace caffe {
 
 		// prepare temp_ array
 		forward_hash2temp_gpu(bottom, top);
+		//writeDense_2_TXT((const float*)temp_.cpu_data(), temp_.count(), "temp_gpu.txt");
 
 		if (use_global_stats_) 
 		{
@@ -128,13 +131,14 @@ namespace caffe {
 			/********1. compute the mean EX for each channel *************/
 			caffe_gpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div, 
 				temp_.gpu_data(), mean_multiplier_.gpu_data(), Dtype(0), mean_.mutable_gpu_data());
+			//writeDense_2_TXT((const float*)mean_.cpu_data(), mean_.count(), "mean_gpu.txt");
 		}
 
 		/**********************2 substract mean****************/
 		substract_mean_kernel << <CAFFE_GET_BLOCKS(channels_*total_defNum), CAFFE_CUDA_NUM_THREADS >> > (
 			temp_.mutable_gpu_data(), channels_, total_defNum, mean_.gpu_data()
 			);
-
+		//writeDense_2_TXT((const float*)temp_.cpu_data(), temp_.count(), "temp_gpu.txt");
 		/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
 		if (!use_global_stats_)
 		{
@@ -158,9 +162,31 @@ namespace caffe {
 		/********************4. compute final top (X-mean(X))/(sqrt(var(X)+eps))***********************/
 		// normalize variance
 		// div by sqrt(var(X)+eps)
+#if 0//dp
 		inv_sqrt_eps_var_kernel << <CAFFE_GET_BLOCKS(channels_*total_defNum), CAFFE_CUDA_NUM_THREADS >> > (
 			temp_.mutable_gpu_data(), channels_, total_defNum, variance_.gpu_data(), eps_
 			);
+#else
+		// normalize variance
+		caffe_add_scalar(variance_.count(), eps_, variance_.mutable_cpu_data());
+		caffe_powx(variance_.count(), variance_.cpu_data(), Dtype(0.5),
+			variance_.mutable_cpu_data());
+
+		//set variance to inV
+		for (int c = 0; c < channels_; c++)
+		{
+			inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
+			//printf("inv sqrt var %.6f\n", inv_sqrt_var_.cpu_data()[c]);
+		}
+
+		// replicate inv_variance to input size
+		caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_, total_defNum, 1,
+			(Dtype)1, inv_sqrt_var_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
+			temp2_.mutable_cpu_data());
+
+		caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
+		//writeDense_2_TXT((const float*)temp_.cpu_data(), temp_.count(), "temp_gpu.txt");
+#endif
 
 		forward_temp2hash_gpu(bottom, top);
 	}

@@ -359,6 +359,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 
 									// prepare temp_ array
 	forward_hash2temp_cpu(bottom, top);
+	//writeDense_2_TXT((const float*)temp_.cpu_data(),temp_.count(),"temp_cpu.txt");
 
 	if (use_global_stats_) {
 		// use the stored mean/variance estimates.
@@ -375,6 +376,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 		//memset(mean_.mutable_cpu_data(), 0, sizeof(float)*channels_);
 		caffe_cpu_gemv(CblasNoTrans, channels_, total_defNum, mean_div,
 			temp_.cpu_data(), mean_multiplier_.cpu_data(), Dtype(0), mean_.mutable_cpu_data());
+		//writeDense_2_TXT((const float*)mean_.cpu_data(), mean_.count(), "mean_cpu.txt");
 	}
 
 
@@ -383,7 +385,7 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 	caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels_,
 		total_defNum, 1, (Dtype)-1, mean_.cpu_data(), mean_multiplier_.cpu_data(),
 		(Dtype)1, temp_.mutable_cpu_data());
-
+	//writeDense_2_TXT((const float*)temp_.cpu_data(), temp_.count(), "temp_cpu.txt");
 	/********************3. compute variance using var(X) = E((X-EX)^2)***********************/
 	if (!use_global_stats_)
 	{
@@ -423,10 +425,52 @@ void BNHashLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 		temp2_.mutable_cpu_data());
 	
 	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
+	//writeDense_2_TXT((const float*)temp_.cpu_data(), temp_.count(), "temp_cpu.txt");
+
+	caffe_set(top[HASH_DATA_BLOB]->count(), (Dtype)0,
+		top[HASH_DATA_BLOB]->mutable_cpu_data());
 
 	forward_temp2hash_cpu(bottom, top);
 
 	//printf("******************BNHash forward end\n");
+
+#if TIANJIA_DEBUG_GPU	//debug GPU
+
+	
+	printf("\n===============CHECKING BNHash Forward GPU CPU, Res %d======================\n",(int)top[DENSE_RES_BLOB]->cpu_data()[0]);
+	vector<Blob<Dtype>*>  gpu_top(top.size());
+
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		gpu_top[i] = new Blob<Dtype>();
+		gpu_top[i]->ReshapeLike(*top[i]);
+	}
+
+	cudaThreadSynchronize();
+	Forward_gpu(bottom, gpu_top);
+	cudaThreadSynchronize();
+	//check
+	float eps = 1e-6f;
+	//writeDense_2_TXT((const float*)gpu_top[HASH_DATA_BLOB]->cpu_data(), gpu_top[HASH_DATA_BLOB]->count(), "gpu_top.txt");
+	//writeDense_2_TXT((const float*)top[HASH_DATA_BLOB]->cpu_data(), top[HASH_DATA_BLOB]->count(), "cpu_top.txt");
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		for (int j = 0; j < top[i]->count(); j++)
+		{
+			//if (fabs(top[i]->cpu_data()[j] - gpu_top[i]->cpu_data()[j]) / (fabs(top[i]->cpu_data()[j]) + 1e-7f) > eps)
+			if (fabs(top[i]->cpu_data()[j] - gpu_top[i]->cpu_data()[j]) > eps)
+			{
+				printf("Error: BNHash Forward cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", top[i]->cpu_data()[j], gpu_top[i]->cpu_data()[j]);
+			}
+		}
+	}
+
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		delete gpu_top[i];
+	}
+	printf("===============CHECKING BNHash Forward GPU CPU  DONE======================\n");
+#endif
 }
 
 template <typename Dtype>
@@ -513,9 +557,50 @@ void BNHashLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 		(Dtype)1, inv_sqrt_var_.cpu_data(), mean_multiplier_.cpu_data(), (Dtype)0,
 		temp2_.mutable_cpu_data());
 	caffe_mul(temp_.count(), temp_.cpu_data(), temp2_.cpu_data(), temp_.mutable_cpu_data());
+
+	caffe_set(bottom[HASH_DATA_BLOB]->count(), (Dtype)0,
+		bottom[HASH_DATA_BLOB]->mutable_cpu_diff());
 	backward_temp2BottomDif_cpu(bottom, top);
 
 	//printf("******************BNHash backward end\n");
+
+#if TIANJIA_DEBUG_GPU	//debug GPU
+	printf("\n===============CHECKING BNHash Backward GPU CPU======================\n");
+
+
+	vector<Blob<Dtype>*>  gpu_bottom(bottom.size());
+	for (int i = 0; i < (int)bottom.size(); i++)
+	{
+		gpu_bottom[i] = new Blob<Dtype>();
+		gpu_bottom[i]->ReshapeLike(*bottom[i]);
+		caffe::caffe_copy(gpu_bottom[i]->count(), bottom[i]->cpu_data(), gpu_bottom[i]->mutable_cpu_data());
+		caffe::caffe_copy(gpu_bottom[i]->count(), bottom[i]->cpu_diff(), gpu_bottom[i]->mutable_cpu_diff());
+	}
+
+	cudaThreadSynchronize();
+	Backward_gpu(top, propagate_down, gpu_bottom);
+	cudaThreadSynchronize();
+	//check
+	float eps = 1e-6f;
+
+	for (int i = 0; i < (int)bottom.size(); i++)
+	{
+		for (int j = 0; j < bottom[i]->count(); j++)
+		{
+			//if (fabs(bottom[i]->cpu_diff()[j] - gpu_bottom[i]->cpu_diff()[j]) / (fabs(bottom[i]->cpu_diff()[j]) + 1e-7f) > eps)
+			if (fabs(bottom[i]->cpu_diff()[j] - gpu_bottom[i]->cpu_diff()[j]) > eps)
+			{
+				printf("Error: BNHash Backward cpu gpu not match! cpu: %.7f, gpu: %.7f!\n", bottom[i]->cpu_diff()[j], gpu_bottom[i]->cpu_diff()[j]);
+			}
+		}
+	}
+	for (int i = 0; i < (int)top.size(); i++)
+	{
+		delete gpu_bottom[i];
+	}
+
+	printf("===============CHECKING BNHash Backward GPU CPU DONE======================\n");
+#endif
 }
 
 

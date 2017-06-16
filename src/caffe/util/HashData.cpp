@@ -767,6 +767,55 @@ int writeDense_2_HF5(const float *dense_data, int n, int res, int channels, cons
 	return 1;
 }
 
+int writeDense_2_TXT(const float *dense_data, int n, const char *filename)
+{
+	std::ofstream ofs(filename);
+	for (int i = 0; i < n; i++)
+	{
+		ofs << dense_data[i] << std::endl;
+	}
+	ofs.close();
+	return 1;
+}
+
+int writeDense_2_TXT(const int *dense_data, int n, const char *filename)
+{
+	std::ofstream ofs(filename);
+	for (int i = 0; i < n; i++)
+	{
+		ofs << dense_data[i] << std::endl;
+	}
+	ofs.close();
+	return 1;
+}
+
+int writeDense_2_TXT(const VolumeIndexType *dense_data, int n, const char *filename)
+{
+	std::ofstream ofs(filename);
+	for (int i = 0; i < n; i++)
+	{
+		ofs << dense_data[i] << std::endl;
+	}
+	ofs.close();
+	return 1;
+}
+
+int writeDense_2_BIN(const float *dense_data, int data_size, const char *filename)
+{
+	FILE *fp = fopen(filename, "wb");
+	if (!fp)
+	{
+		printf("Error: failed to write dense to %s\n",filename);
+		return 0;
+	}
+	
+	fwrite(dense_data,sizeof(float),data_size,fp);
+
+	fclose(fp);
+	return 1;
+}
+
+
 int writeBatchHash_2_denseFiles(const BatchHashData &batch, int res, const char *prefix)
 {
 	float *dense_buf = new float[res * res * res * batch.m_channels];
