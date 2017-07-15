@@ -38,6 +38,8 @@ protected:	//for hash data
 	//	const std::vector<Blob<Dtype>*>& top);
 	void HierHashes_2_blobs(const std::vector<CHierarchyHash *> &vpHierHashes, const std::vector<unsigned int> &batch_perm,
 			const std::vector<Blob<Dtype>*>& top);
+	//new, use recorded batch hash, to solve the problem that  last few data may be lost when file switches
+	void BatchHierHashes_2_blobs(const std::vector<CHierarchyHash *> &vpHierHashes, const std::vector<Blob<Dtype>*>& top);
 public:
 	//for debug
 	void save_blobs_to_hashFiles(const std::vector<Blob<Dtype>*>& top, const char *main_body);
@@ -72,10 +74,14 @@ protected:
   //hash
 public:
 	void destroyHierHashes();
+	void destroyBatch();
 	int loadHierHashes(FILE *fp);
   //std::vector<HashData> m_hashes;
   std::vector<CHierarchyHash *> m_vpHierHashes;
   std::vector<unsigned int> m_batch_perm;	//batch permutation
+
+  //record current batch
+  std::vector<CHierarchyHash *> m_curBatchHash;
 
   //for multithread acceleration
 public:

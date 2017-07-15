@@ -81,6 +81,13 @@ namespace caffe {
 							}
 						}
 					} // end for nx, ny, nz
+#if USE_EMPTY_VALID_REGION
+			if (top_hash[top_m*firstChannel] == -FLT_MAX)//expanded regions, no parent
+			{
+				for (int c = firstChannel; c < lastChannel; c++)
+					top_hash[top_m*c] = 0.f;
+			}
+#endif
 		} // end for caffe_kernel_loop
 	}
 
@@ -108,7 +115,12 @@ namespace caffe {
 			const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
 			const int v = validPos[valid_v] + c*top_m + channels*top_m_sum;
 			const int bt_m_idx = mask[v];
+#if USE_EMPTY_VALID_REGION
+			if(bt_m_idx!=-1)
+				bottom_dif[bt_m_idx + bottom_m * c + channels*bottom_m_sum] = top_dif[v];
+#else
 			bottom_dif[bt_m_idx + bottom_m * c + channels*bottom_m_sum] = top_dif[v];
+#endif
 		}
 	}
 
@@ -168,6 +180,9 @@ namespace caffe {
 		const VolumeIndexType* volIdx_ptr = (const VolumeIndexType*)bottom[VOLUME_IDX_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
 		const int* validPos = (const int*)bottom[VALID_POS_BLOB + HASH_STRUCTURE_SIZE]->gpu_data();
 		int *mask = max_idx_.mutable_gpu_data();
+
+		//added by tianjia
+		caffe_gpu_set(max_idx_.count(), -1, mask);
 
 		batch_forward_gpu_max_kernel << <CAFFE_GET_BLOCKS(nThreads), CAFFE_CUDA_NUM_THREADS >> > (
 			bt_hash, bt_posTag, bt_offset, bt_m_bar_ptr, bt_m_sum_ptr, bt_r_bar_ptr, bt_r_sum_ptr,

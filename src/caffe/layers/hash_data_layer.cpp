@@ -9,7 +9,7 @@
 #include <boost/thread.hpp>
 
 #define MULT_THREAD 0
-
+#define USE_BATCH_HASH 1
 namespace caffe {
 
 	template <typename Dtype>
@@ -34,6 +34,7 @@ HashDataLayer<Dtype>::~HashDataLayer<Dtype>()
 	this->StopInternalThread();
 #endif
 	destroyHierHashes();
+	destroyBatch();
 }
 
 template <typename Dtype>
@@ -44,6 +45,16 @@ void HashDataLayer<Dtype>::destroyHierHashes()
 		delete m_vpHierHashes[i];
 	}
 	m_vpHierHashes.resize(0);
+}
+
+template <typename Dtype>
+void HashDataLayer<Dtype>::destroyBatch()
+{
+	for (int i = 0; i<(int)m_curBatchHash.size(); i++)
+	{
+		delete m_curBatchHash[i];
+	}
+	m_curBatchHash.resize(0);
 }
 
 template <typename Dtype>
@@ -252,6 +263,8 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 		printf("Fatal error: HierHashes_2_blobs failed! no hierHashes!\n");
 		exit(0);
 	}
+
+
 	const int struct_num = (int)vpHierHashes[0]->m_vpStructs.size();
 	if (!struct_num)
 	{
@@ -420,6 +433,183 @@ void HashDataLayer<Dtype>::HierHashes_2_blobs(const std::vector<CHierarchyHash *
 	}
 }
 
+
+
+template <typename Dtype>
+void HashDataLayer<Dtype>::BatchHierHashes_2_blobs(const std::vector<CHierarchyHash *> &batch_hashes, const std::vector<Blob<Dtype>*>& top_blobs)
+{
+	const int batch_num = this->layer_param_.hash_data_param().batch_size();
+	if (!batch_hashes.size()|| (int)batch_hashes.size()!=batch_num)
+	{
+		printf("Fatal error: BatchHierHashes_2_blobs failed! no hierHashes or batch size not match!\n");
+		exit(0);
+	}
+
+	const int struct_num = (int)batch_hashes[0]->m_vpStructs.size();
+	if (!struct_num)
+	{
+		printf("Fatal error: BatchHierHashes_2_blobs failed! no structures!\n");
+		exit(0);
+	}
+	const int channels = batch_hashes[0]->m_channels;
+	const int bottom_dense_res = batch_hashes[0]->m_dense_res;
+	//record the channels
+	channels_ = channels;
+
+	if (channels<1)
+	{
+		printf("Fatal error: BatchHierHashes_2_blobs failed! no channels!\n");
+		exit(0);
+	}
+
+	//reshape blob
+	if (top_blobs.size() != HASH_DATA_SIZE + struct_num * HASH_STRUCTURE_SIZE + 1)	//data + n*struct + label
+																					//structure info for multi layers + one hash data + one label
+	{
+		printf("Error: hash data layer: top blobs should be have %d structus and 1 hash data!\n", struct_num);
+		exit(0);
+	}
+
+	//*****NOTE: the blob order is <data, <structures>, label>***********/
+
+	//blobs: hash data, < offset data, position tags, m_bars, r_bars, defNums >, label
+	std::vector<int> batch_shape(1, batch_num);
+	std::vector<int> batch_shape_1(1, batch_num + 1);
+	//reshape m_bar, r_bar, define_num
+	for (int i = 0; i<struct_num; i++)
+	{
+		top_blobs[M_BAR_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape);
+		top_blobs[R_BAR_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape);
+		top_blobs[DEFNUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape);
+		top_blobs[DEFNUM_SUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape_1);
+		top_blobs[M_SUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape_1);
+		top_blobs[R_SUM_BLOB + i * HASH_STRUCTURE_SIZE]->Reshape(batch_shape_1);
+	}
+
+	std::vector<int> scalar_shape(1, 1);	//the blob only has one scalar value
+	for (int i = 0; i < struct_num; i++)
+	{
+		top_blobs[DENSE_RES_BLOB]->Reshape(scalar_shape);
+		top_blobs[CHANNEL_BLOB]->Reshape(scalar_shape);
+	}
+	top_blobs[DENSE_RES_BLOB]->mutable_cpu_data()[0] = (Dtype)(bottom_dense_res);
+	top_blobs[CHANNEL_BLOB]->mutable_cpu_data()[0] = (Dtype)channels_;
+
+	//fill the value of m_bar, r_bar, define_num, and gather the total size for batched offset and pos_tag, 
+	//gather the total size of m, and record each m && r, offset, postag, and bottom_hash_data
+	for (int si = 0; si < struct_num; si++)
+	{
+		Blob<Dtype>* offset_blob = top_blobs[OFFSET_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* postag_blob = top_blobs[POSTAG_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* mBar_blob = top_blobs[M_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* rBar_blob = top_blobs[R_BAR_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* defNum_blob = top_blobs[DEFNUM_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* validPos_blob = top_blobs[VALID_POS_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* volIdx_blob = top_blobs[VOLUME_IDX_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* defNumSum_blob = top_blobs[DEFNUM_SUM_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* mSum_blob = top_blobs[M_SUM_BLOB + si * HASH_STRUCTURE_SIZE];
+		Blob<Dtype>* rSum_blob = top_blobs[R_SUM_BLOB + si * HASH_STRUCTURE_SIZE];
+
+		int batch_m = 0;
+		int batch_r = 0;
+		int m_bar, r_bar, defNum;
+		int m, r;	//m_bar*m_bar*m_bar, r_bar*r_bar*r_bar
+		int totalDefNum = 0;
+		for (int idx = 0; idx<batch_num; idx++)
+		{
+			m_bar = batch_hashes[idx]->m_vpStructs[si]->m_mBar;
+			r_bar = batch_hashes[idx]->m_vpStructs[si]->m_rBar;
+			defNum = batch_hashes[idx]->m_vpStructs[si]->m_defNum;
+
+			mBar_blob->mutable_cpu_data()[idx] = (Dtype)m_bar;
+			rBar_blob->mutable_cpu_data()[idx] = (Dtype)r_bar;
+			defNum_blob->mutable_cpu_data()[idx] = (Dtype)defNum;
+
+			if (!defNum)
+			{
+				printf("Fatal error: defNum zero! cur row: %d, idx: %d\n", current_row_, idx);
+				batch_hashes[idx]->save("wrong_hierHash.hst");
+				exit(0);
+			}
+
+			defNumSum_blob->mutable_cpu_data()[idx] = (Dtype)totalDefNum;
+			mSum_blob->mutable_cpu_data()[idx] = (Dtype)batch_m;
+			rSum_blob->mutable_cpu_data()[idx] = (Dtype)batch_r;
+
+			batch_m += m_bar * m_bar * m_bar;
+			batch_r += r_bar * r_bar * r_bar;
+			totalDefNum += defNum;
+		}
+		defNumSum_blob->mutable_cpu_data()[batch_num] = (Dtype)totalDefNum;
+		mSum_blob->mutable_cpu_data()[batch_num] = (Dtype)batch_m;
+		rSum_blob->mutable_cpu_data()[batch_num] = (Dtype)batch_r;
+
+		//fill the offset and posTag
+		const int offset_size_f = (batch_r * 3 * sizeof(unsigned char)) / sizeof(Dtype) + 1;
+		std::vector<int> offset_shape(1, offset_size_f);
+		offset_blob->Reshape(offset_shape);
+		//position tag, all convert PACKED_POSITION to float
+		const int posTag_size_f = (batch_m * sizeof(PACKED_POSITION)) / sizeof(Dtype) + 1;
+		std::vector<int> posTag_shape(1, posTag_size_f);
+		postag_blob->Reshape(posTag_shape);
+		//valid position tag, should convert to int, we store it the same size as posTag, 
+		// but its actual size should be defNum
+		const int validPos_size_f = (totalDefNum * sizeof(int)) / sizeof(Dtype) + 1;
+		std::vector<int> validPos_shape(1, validPos_size_f);
+		validPos_blob->Reshape(validPos_shape);
+		//volume index of each valid voxel
+		const int volIdx_size_f = (totalDefNum * sizeof(VolumeIndexType)) / sizeof(Dtype) + 1;
+		std::vector<int> volIdx_shape(1, volIdx_size_f);
+		volIdx_blob->Reshape(volIdx_shape);
+
+		unsigned char *batch_offset_ptr = (unsigned char *)offset_blob->mutable_cpu_data();
+		PACKED_POSITION *batch_posTag_ptr = (PACKED_POSITION *)postag_blob->mutable_cpu_data();
+		int* batch_validPos_ptr = (int*)validPos_blob->mutable_cpu_data();
+		VolumeIndexType* batch_volIdx_ptr = (VolumeIndexType*)volIdx_blob->mutable_cpu_data();
+
+		for (int idx = 0; idx < batch_num; idx++)
+		{
+			m_bar = batch_hashes[idx]->m_vpStructs[si]->m_mBar;
+			r_bar = batch_hashes[idx]->m_vpStructs[si]->m_rBar;
+			m = m_bar*m_bar*m_bar;
+			r = r_bar*r_bar*r_bar;
+			defNum = batch_hashes[idx]->m_vpStructs[si]->m_defNum;
+
+			memcpy(batch_offset_ptr, batch_hashes[idx]->m_vpStructs[si]->m_offset_data, sizeof(unsigned char)*r * 3);
+			memcpy(batch_posTag_ptr, batch_hashes[idx]->m_vpStructs[si]->m_position_tag, sizeof(PACKED_POSITION)*m);
+			getValidPoses(batch_posTag_ptr, batch_validPos_ptr, m);
+			for (int tmp_i = 0; tmp_i < defNum; tmp_i++)
+				batch_volIdx_ptr[tmp_i] = (VolumeIndexType)idx;
+
+			batch_offset_ptr += r * 3;
+			batch_posTag_ptr += m;
+			batch_validPos_ptr += defNum;
+			batch_volIdx_ptr += defNum;
+		}
+
+
+		//fill the bottom hash data
+		if (si == 0)	//bottom hash
+		{
+			Blob<Dtype>* hash_data_blob = top_blobs[HASH_DATA_BLOB];
+			const int hashdata_size_f = (batch_m * channels * sizeof(float)) / sizeof(Dtype) + 1;
+			std::vector<int> hash_data_shape(1, hashdata_size_f);
+			hash_data_blob->Reshape(hash_data_shape);
+
+			float *batch_hash_ptr = (float*)hash_data_blob->mutable_cpu_data();
+			for (int idx = 0; idx < batch_num; idx++)
+			{
+				m_bar = batch_hashes[idx]->m_vpStructs[si]->m_mBar;
+				m = m_bar*m_bar*m_bar;
+
+				memcpy(batch_hash_ptr, batch_hashes[idx]->m_hash_data, sizeof(float)*m*channels);
+				batch_hash_ptr += m*channels;
+			}
+		}
+	}
+}
+
+
 template <typename Dtype>
 void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) 
@@ -470,9 +660,23 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   {
 	  m_batch_perm[i] = data_permutation_[i];
   }
+#if 1 //added by tianjia, to solve the problem that the last few data may be lost when file switch
+  destroyBatch();
+  m_curBatchHash.resize(batch_num);
+  for (int i = 0; i < batch_num; i++)
+  {
+	  m_curBatchHash[i] = new CHierarchyHash();
+	  *m_curBatchHash[i] = *m_vpHierHashes[m_batch_perm[i]];
+  }
+#endif
+
   
   //send the first batch to tops in the setup stage, in order to allocate essential memories
+#if USE_BATCH_HASH
+  BatchHierHashes_2_blobs(m_curBatchHash, top);
+#else//old, may lose last few data when file switches
   HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, top);
+#endif
   //reshape the top label, as the other blobs' shape will change every batch
   vector<int> top_label_shape;
   top_label_shape.resize(label_blob_.num_axes());
@@ -488,6 +692,7 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   }
   printf("\n");
   
+
   const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
   int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
   top[label_blob_idx]->Reshape(top_label_shape);
@@ -584,6 +789,35 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 }
 #else
 /********************************OLD: single thread***********************************/
+
+#if USE_BATCH_HASH
+template <typename Dtype>
+void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+	const vector<Blob<Dtype>*>& top) 
+{
+	const int batch_size = this->layer_param_.hash_data_param().batch_size();
+	const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
+	const int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
+	const int label_dim = top[label_blob_idx]->count() / top[label_blob_idx]->shape(0);
+	for (int i = 0; i < batch_size; ++i) {
+		while (Skip()) {
+			Next();
+		}
+
+		//record batch hash, will be send to top at last
+		*m_curBatchHash[i] = *m_vpHierHashes[data_permutation_[current_row_]];
+		//send labels
+		
+		caffe_copy(label_dim,
+			&label_blob_.cpu_data()[data_permutation_[current_row_]
+			* label_dim], &top[label_blob_idx]->mutable_cpu_data()[i * label_dim]);
+
+		Next();
+	}
+
+	BatchHierHashes_2_blobs(m_curBatchHash, top);
+}
+#else
 template <typename Dtype>
 void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
@@ -641,6 +875,7 @@ void HashDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 		  * data_dim], &top[label_blob_idx]->mutable_cpu_data()[i * data_dim]);
   }
 }
+#endif
 #endif
 
 template <typename Dtype>
@@ -791,7 +1026,12 @@ void HashDataLayer<Dtype>::fetch_batch(GeneralBatch<Dtype>* batch)
 		vpBlobs[i] = batch->blobs_[i].get();
 	}
 
+	
+#if USE_BATCH_HASH
+	BatchHierHashes_2_blobs(m_curBatchHash, vpBlobs);
+#else//old, may lose last few data when file switches
 	HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, vpBlobs);
+#endif
 
 #if 0//for debug
 	save_blobs_to_hashFiles(top, "test_hash_data_layer");

@@ -447,6 +447,7 @@ message LayerParameter {
   optional ConvHashParameter conv_hash_param = 934;
   optional PoolHashParameter pool_hash_param = 935;
   optional BNHashParameter bn_hash_param = 936;
+  optional ScaleHashParameter scale_hash_param = 937;
 }
 
 // Message that stores parameters used to apply transformation
@@ -1276,6 +1277,23 @@ message ScaleParameter {
   // Set num_axes := 0, to multiply with a zero-axis Blob: a scalar.
   optional int32 num_axes = 2 [default = 1];
 
+  // (filler is ignored unless just one bottom is given and the scale is
+  // a learned parameter of the layer.)
+  // The initialization for the learned scale parameter.
+  // Default is the unit (1) initialization, resulting in the ScaleLayer
+  // initially performing the identity operation.
+  optional FillerParameter filler = 3;
+
+  // Whether to also learn a bias (equivalent to a ScaleLayer+BiasLayer, but
+  // may be more efficient).  Initialized with bias_filler (defaults to 0).
+  optional bool bias_term = 4 [default = false];
+  optional FillerParameter bias_filler = 5;
+  optional float min_value = 6;
+  optional float max_value = 7;
+}
+
+
+message ScaleHashParameter {
   // (filler is ignored unless just one bottom is given and the scale is
   // a learned parameter of the layer.)
   // The initialization for the learned scale parameter.

@@ -543,6 +543,54 @@ CHashStructInfo::CHashStructInfo()
 	m_defNum = 0;
 }
 
+
+CHashStructInfo::CHashStructInfo(const CHashStructInfo &rhs)
+{
+	m_mBar = rhs.m_mBar;
+	m_rBar = rhs.m_rBar;
+	m_defNum = rhs.m_defNum;
+
+	const int m = m_mBar*m_mBar*m_mBar;
+	const int r = m_rBar * m_rBar * m_rBar;
+
+	m_offset_data = new unsigned char[r * 3];
+	m_position_tag = new PACKED_POSITION[m];
+	
+	memcpy(m_offset_data, rhs.m_offset_data, sizeof(unsigned char) * r * 3);
+	memcpy(m_position_tag, rhs.m_position_tag, sizeof(PACKED_POSITION) * m);
+}
+
+
+CHashStructInfo &CHashStructInfo::operator=(const CHashStructInfo &rhs)
+{
+	const int ori_mBar = m_mBar;
+	const int ori_rBar = m_rBar;
+	const int ori_m = ori_mBar * ori_mBar * ori_mBar;
+	const int ori_r = ori_rBar * ori_rBar * ori_rBar;
+
+	m_mBar = rhs.m_mBar;
+	m_rBar = rhs.m_rBar;
+	m_defNum = rhs.m_defNum;
+
+	const int m = m_mBar*m_mBar*m_mBar;
+	const int r = m_rBar * m_rBar * m_rBar;
+
+	if (r > ori_r)
+	{
+		SAFE_VDELETE(m_offset_data);
+		m_offset_data = new unsigned char[r * 3];
+	}
+	if (m > ori_m)
+	{
+		SAFE_VDELETE(m_position_tag);
+		m_position_tag = new PACKED_POSITION[m];
+	}
+
+	memcpy(m_offset_data, rhs.m_offset_data, sizeof(unsigned char) * r * 3);
+	memcpy(m_position_tag, rhs.m_position_tag, sizeof(PACKED_POSITION) * m);
+	return *this;
+}
+
 CHashStructInfo::~CHashStructInfo()
 {
 	destroy();
@@ -625,9 +673,81 @@ CHierarchyHash::CHierarchyHash()
 	m_channels = 0;
 }
 
+CHierarchyHash::CHierarchyHash(const CHierarchyHash &rhs)
+{
+	m_dense_res = rhs.m_dense_res;
+	m_channels = rhs.m_channels;
+	m_vpStructs.resize(rhs.m_vpStructs.size());
+	for (int i=0;i<(int)rhs.m_vpStructs.size();i++)
+	{
+		m_vpStructs[i] = new CHashStructInfo(*rhs.m_vpStructs[i]);
+	}
+
+	if (m_vpStructs.size())
+	{
+		const int new_mBar = m_vpStructs[0]->m_mBar;
+		const int new_m = new_mBar * new_mBar * new_mBar;
+		m_hash_data = new float[new_m*m_channels];
+		memcpy(m_hash_data, rhs.m_hash_data, sizeof(float)*new_m*m_channels);
+	}
+	else
+	{
+		m_hash_data = NULL;
+	}
+
+}
+
 CHierarchyHash::~CHierarchyHash()
 {
 	destroy();
+}
+
+CHierarchyHash &CHierarchyHash::operator = (const CHierarchyHash &rhs)
+{
+	//record ori
+	int ori_channels = m_channels;
+	int ori_mBar = 0;
+	if (m_vpStructs.size())
+	{
+		ori_mBar = m_vpStructs[0]->m_mBar;
+	}
+	const int ori_m = ori_mBar * ori_mBar * ori_mBar;
+	//new val
+	m_dense_res = rhs.m_dense_res;
+	m_channels = rhs.m_channels;
+
+
+	if (!rhs.m_vpStructs.size())
+	{
+		printf("Fatal error when CHierarchyHash::operator=(); no structure info!\n");
+		exit(0);
+	}
+	if (m_vpStructs.size() && m_vpStructs.size() != rhs.m_vpStructs.size())
+	{
+		printf("FATAL error: structure number changed!! UNEXPECTED!!!\n");
+		exit(0);
+	}
+
+	if (!m_vpStructs.size())
+	{
+		initStructs((int)rhs.m_vpStructs.size());
+	}
+	//copy structs
+	for (int i = 0; i<(int)rhs.m_vpStructs.size(); i++)
+	{
+		*m_vpStructs[i] = *rhs.m_vpStructs[i];
+	}
+
+	//copy hash data
+	const int new_mBar = m_vpStructs[0]->m_mBar;
+	const int new_m = new_mBar * new_mBar * new_mBar;
+	if (new_m * m_channels > ori_m * ori_channels)	//need larger memory
+	{
+		SAFE_VDELETE(m_hash_data);
+		m_hash_data = new float[new_m*m_channels];
+	}
+	memcpy(m_hash_data, rhs.m_hash_data, sizeof(float)*new_m*m_channels);
+	return *this;
 }
 
 void CHierarchyHash::destroy()
@@ -1089,3 +1209,4 @@ void calc_square_sum(const float *hash, const unsigned char *offset,
 
 	}
 }
+

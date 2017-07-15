@@ -272,17 +272,18 @@ void PoolHashLayer<Dtype>::forward_cpu_max(const float *bottom_hash, const unsig
 				}
 			}
 		}
+#if USE_EMPTY_VALID_REGION
 		tp_hash_ptr = &top_hash[v];
-		//init to min
+		//new added, for expanded empty valid regions, set to zero
 		if (*tp_hash_ptr == -FLT_MAX)
 		{
-			printf("======ERROR: impossible happend!======\n");
 			for (int c = 0; c<channels; c++)
 			{
 				*tp_hash_ptr = 0;
 				tp_hash_ptr += top_m;
 			}
 		}
+#endif
 	}
 }
 
@@ -476,7 +477,26 @@ void PoolHashLayer<Dtype>::backward_cpu_max(float *bottom_dif, int bottom_m_bar,
 		const float *tp_dif_ptr = &top_dif[v];
 		const int *mask_ptr = &mask[v];
 		float *bt_dif_start = bottom_dif;
-		//init to min
+		
+#if USE_EMPTY_VALID_REGION
+		if (*mask_ptr == -1)	//expanded regions, no parent
+		{
+
+		}
+		else
+		{
+			for (int c = 0; c < channels; c++)
+			{
+				const int bt_m_idx = *mask_ptr;
+
+				bt_dif_start[bt_m_idx] += *tp_dif_ptr;
+
+				tp_dif_ptr += top_m;
+				mask_ptr += top_m;
+				bt_dif_start += bottom_m;
+			}
+		}
+#else
 		for (int c = 0; c < channels; c++)
 		{
 			const int bt_m_idx = *mask_ptr;
@@ -487,6 +507,7 @@ void PoolHashLayer<Dtype>::backward_cpu_max(float *bottom_dif, int bottom_m_bar,
 			mask_ptr += top_m;
 			bt_dif_start += bottom_m;
 		}
+#endif
 	}
 }
 

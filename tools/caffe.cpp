@@ -22,6 +22,7 @@ namespace bp = boost::python;
 #include "caffe/layers/pool_hash_layer.hpp"
 #include "caffe/layers/bn_hash_layer.hpp"
 #include "caffe/layers/hash_2_dense_layer.hpp"
+#include "caffe/layers/scale_hash_layer.hpp"
 //**************************//
 using caffe::Blob;
 using caffe::Caffe;
@@ -1148,6 +1149,91 @@ void test_hash2dense_layer_backward(caffe::Hash2DenseLayer<float> *hash2dense_la
 
 
 
+caffe::ScaleHashLayer<float> *test_scaleHash_layer_forward(const std::vector<Blob<float> *> &bottom, std::vector<Blob<float> *> &top)
+{
+	const int top_blob_num = HASH_DATA_SIZE;
+	top.resize(top_blob_num);	//only data updated, structure is already given
+	for (int i = 0; i < top_blob_num; i++)
+	{
+		top[i] = new Blob<float>();
+	}
+
+	caffe::ScaleHashParameter *scale_hash_param = new caffe::ScaleHashParameter;
+	scale_hash_param->set_bias_term(true);
+
+	int channels = (int)bottom[CHANNEL_BLOB]->cpu_data()[0];
+
+	caffe::LayerParameter scale_hash_layer_param;
+	scale_hash_layer_param.set_type("ScaleHash");
+	scale_hash_layer_param.set_allocated_scale_hash_param(scale_hash_param);
+
+
+	caffe::ScaleHashLayer<float> *scale_hash_layer = new caffe::ScaleHashLayer<float>(scale_hash_layer_param);
+	scale_hash_layer->SetUp(bottom, top);
+	scale_hash_layer->Forward(bottom, top);
+
+	return scale_hash_layer;
+}
+
+
+
+void test_scaleHash_layer_backward(caffe::ScaleHashLayer<float> *pScaleHashLayer, const std::vector<Blob<float> *> &bottom,
+	const std::vector<Blob<float> *> &top)
+{
+	//random init top dif
+	float *top_hash_dif = (float*)top[HASH_DATA_BLOB]->mutable_cpu_diff();
+	const unsigned char* offset_ptr = (const unsigned char *)bottom[OFFSET_BLOB]->cpu_data();
+	const PACKED_POSITION *posTag_ptr = (const PACKED_POSITION *)bottom[POSTAG_BLOB]->cpu_data();
+
+	const int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
+	const int top_channels = (int)top[CHANNEL_BLOB]->cpu_data()[0];
+	const int dense_res = (int)top[DENSE_RES_BLOB]->cpu_data()[0];
+	const float invRand = 1.f / (float)RAND_MAX;
+	for (int i = 0; i < batch_num; ++i)
+	{
+		float *top_dif = top_hash_dif;
+
+		const unsigned char* offset_data = offset_ptr;
+		const PACKED_POSITION *pos_tags = posTag_ptr;
+		const int m_bar = (int)bottom[M_BAR_BLOB]->cpu_data()[i];
+		const int r_bar = (int)bottom[R_BAR_BLOB]->cpu_data()[i];
+		const int defNum = (int)bottom[DEFNUM_BLOB]->cpu_data()[i];
+		const int m = m_bar * m_bar * m_bar;
+		const int r = r_bar * r_bar * r_bar;
+
+		//init to zero
+		memset(top_dif, 0, sizeof(float)*m*top_channels);
+		//fill top dif randomly
+		float *top_dif_ptr = top_dif;
+		for (int v = 0; v < m; v++)
+		{
+			//if the hash voxel is undefined, skip
+			if (!ishashVoxelDefined(&pos_tags[v]))
+			{
+				top_dif_ptr++;
+				continue;
+			}
+			float *cur_dif_ptr = top_dif_ptr;
+			for (int c = 0; c < top_channels; c++)
+			{
+				*cur_dif_ptr = (float)rand() * invRand;
+				cur_dif_ptr += m;
+			}
+			top_dif_ptr++;
+		}
+
+
+		//to next hash
+		offset_ptr += r * 3;
+		posTag_ptr += m;
+		top_hash_dif += m * top_channels;
+	}
+	std::vector<bool> sh_flag; //no use
+	pScaleHashLayer->Backward(top, sh_flag, bottom);
+}
+
+
+
 void test_hash()
 {
 	printf("Testing hash data layer...\n");
@@ -1267,6 +1353,35 @@ void test_hash()
 
 	caffe::Hash2DenseLayer<float> *pH2DLayer = test_hash2dense_layer_forward(h2d_bottom, h2d_top);
 	test_hash2dense_layer_backward(pH2DLayer, h2d_bottom, h2d_top);
+
+	/***********************ScaleHash layer*******************/
+	std::vector<Blob<float> *> sh_top;
+	std::vector<Blob<float>*> sh_bottom(HASH_DATA_SIZE + HASH_STRUCTURE_SIZE);
+	sh_bottom[HASH_DATA_BLOB] = bn_top[HASH_DATA_BLOB];
+	sh_bottom[CHANNEL_BLOB] = bn_top[CHANNEL_BLOB];
+	sh_bottom[DENSE_RES_BLOB] = bn_top[DENSE_RES_BLOB];
+	sh_bottom[OFFSET_BLOB] = bn_bottom[OFFSET_BLOB];
+	sh_bottom[POSTAG_BLOB] = bn_bottom[POSTAG_BLOB];
+	sh_bottom[M_BAR_BLOB] = bn_bottom[M_BAR_BLOB];
+	sh_bottom[R_BAR_BLOB] = bn_bottom[R_BAR_BLOB ];
+	sh_bottom[DEFNUM_BLOB] = bn_bottom[DEFNUM_BLOB];
+	sh_bottom[VALID_POS_BLOB] = bn_bottom[VALID_POS_BLOB ];
+	sh_bottom[VOLUME_IDX_BLOB] = bn_bottom[VOLUME_IDX_BLOB ];
+	sh_bottom[DEFNUM_SUM_BLOB] = bn_bottom[DEFNUM_SUM_BLOB ];
+	sh_bottom[M_SUM_BLOB] = bn_bottom[M_SUM_BLOB ];
+	sh_bottom[R_SUM_BLOB] = bn_bottom[R_SUM_BLOB ];
+	//bn_bottom[HASH_DATA_BLOB] = data_top[HASH_DATA_BLOB];
+	//bn_bottom[CHANNEL_BLOB] = data_top[CHANNEL_BLOB];
+	//bn_bottom[DENSE_RES_BLOB] = data_top[DENSE_RES_BLOB];
+	//bn_bottom[OFFSET_BLOB] = data_top[OFFSET_BLOB];
+	//bn_bottom[POSTAG_BLOB] = data_top[POSTAG_BLOB];
+	//bn_bottom[M_BAR_BLOB] = data_top[M_BAR_BLOB];
+	//bn_bottom[R_BAR_BLOB] = data_top[R_BAR_BLOB];
+	//bn_bottom[DEFNUM_BLOB] = data_top[DEFNUM_BLOB];
+	//bn_bottom[VALID_POS_BLOB] = data_top[VALID_POS_BLOB];
+
+	caffe::ScaleHashLayer<float> *pSHLayer = test_scaleHash_layer_forward(sh_bottom, sh_top);
+	test_scaleHash_layer_backward(pSHLayer, sh_bottom, sh_top);
 
 	//do not handle memory, just for testing...
 	printf("\n");

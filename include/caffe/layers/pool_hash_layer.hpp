@@ -7,7 +7,7 @@
 #include "caffe/layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/HashData.h"
-
+#define USE_EMPTY_VALID_REGION 1
 namespace caffe {
 
   /**

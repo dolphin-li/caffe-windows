@@ -480,6 +480,9 @@
     <ClCompile Include="..\..\src\caffe\layers\hash_2_dense_layer.cpp">
       <Filter>src\layers</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\caffe\layers\scale_hash_layer.cpp">
+      <Filter>src\layers</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\caffe\proto\caffe.pb.h">
@@ -867,6 +870,9 @@
       <Filter>include\layers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\caffe\layers\hash_2_dense_layer.hpp">
+      <Filter>include\layers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\caffe\layers\scale_hash_layer.hpp">
       <Filter>include\layers</Filter>
     </ClInclude>
   </ItemGroup>

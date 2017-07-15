@@ -248,7 +248,9 @@ class CHashStructInfo
 {
 public:
 	CHashStructInfo();
+	CHashStructInfo(const CHashStructInfo &rhs);
 	~CHashStructInfo();
+	CHashStructInfo &operator = (const CHashStructInfo &rhs);
 	void destroy();
 	int load(FILE *fp);
 	int save(FILE *fp) const;
@@ -265,6 +267,8 @@ class CHierarchyHash
 {
 public:
 	CHierarchyHash();
+	CHierarchyHash(const CHierarchyHash &rhs);
+	CHierarchyHash &operator = (const CHierarchyHash &rhs);
 	~CHierarchyHash();
 	void destroy();
 	void destroyStructs();
@@ -308,5 +312,6 @@ void calc_square_sum(const float *hash, const unsigned char *offset,
 	const PACKED_POSITION *posTag, int m_bar, int r_bar,
 	int channels, int def_num, float weight, float *out_weighted_sum);
 
+/************************************************************************************/
 
 #endif
