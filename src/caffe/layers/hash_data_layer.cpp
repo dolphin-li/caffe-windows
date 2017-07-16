@@ -8,7 +8,7 @@
 #include "caffe/util/MyMacro.h"
 #include <boost/thread.hpp>
 
-#define MULT_THREAD 0
+#define MULT_THREAD 1
 #define USE_BATCH_HASH 1
 namespace caffe {
 
@@ -708,7 +708,7 @@ void HashDataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 	 {
 		 prefetch_[i]->blobs_[j]->ReshapeLike(*top[j]);
 	 }
-	 prefetch_[i]->blobs_[label_blob_idx]->Reshape(top_label_shape);
+	 //prefetch_[i]->blobs_[label_blob_idx]->Reshape(top_label_shape);
  }
  // Before starting the prefetch thread, we make cpu_data and gpu_data
  // calls so that the prefetch thread does not accidentally make simultaneous
@@ -993,60 +993,36 @@ void HashDataLayer<Dtype>::InternalThreadEntry()
 template <typename Dtype>
 void HashDataLayer<Dtype>::fetch_batch(GeneralBatch<Dtype>* batch)
 {
+
+	std::vector<Blob<Dtype>*> vpBlobs(batch->blobs_.size());
+	for (int i = 0; i<(int)vpBlobs.size(); i++)
+	{
+		vpBlobs[i] = batch->blobs_[i].get();
+	}
+
+
 	const int batch_size = this->layer_param_.hash_data_param().batch_size();
-	//current_row_ = 4096;
-	//LOG(INFO) << "current file: " << current_file_ << " " << file_permutation_[current_file_]
-	// << "current_row_: " << current_row_;
+	const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
+	const int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
+	const int label_dim = batch->blobs_[label_blob_idx]->count() / batch->blobs_[label_blob_idx]->shape(0);
 	for (int i = 0; i < batch_size; ++i) 
 	{
 		while (Skip()) {
 			Next();
 		}
 
-#if 1	//NOTE: will cause bug here, when file switches, previously recorded m_batch_perm[i] is old index, which might > current size
-		m_batch_perm[i] = data_permutation_[current_row_];
-#endif
+		//record batch hash, will be send to top at last
+		*m_curBatchHash[i] = *m_vpHierHashes[data_permutation_[current_row_]];
+		//send labels
+		
+		caffe_copy(label_dim,
+			&label_blob_.cpu_data()[data_permutation_[current_row_]
+			* label_dim], &batch->blobs_[label_blob_idx]->mutable_cpu_data()[i * label_dim]);
+
 		Next();
 	}
 
-#if 1	//fix the bug
-	int hierhash_num = (int)(int)m_vpHierHashes.size();
-	for (int i = 0; i < batch_size; ++i)
-	{
-		if (m_batch_perm[i] >= hierhash_num)
-		{
-			m_batch_perm[i] = m_batch_perm[i] % hierhash_num;
-		}
-	}
-#endif
-
-	std::vector<Blob<Dtype>*> vpBlobs(batch->blobs_.size());
-	for (int i=0;i<(int)vpBlobs.size();i++)
-	{
-		vpBlobs[i] = batch->blobs_[i].get();
-	}
-
-	
-#if USE_BATCH_HASH
 	BatchHierHashes_2_blobs(m_curBatchHash, vpBlobs);
-#else//old, may lose last few data when file switches
-	HierHashes_2_blobs(m_vpHierHashes, m_batch_perm, vpBlobs);
-#endif
-
-#if 0//for debug
-	save_blobs_to_hashFiles(top, "test_hash_data_layer");
-#endif
-
-	//send labels
-	const int structure_num = m_vpHierHashes[0]->m_vpStructs.size();
-	int label_blob_idx = HASH_DATA_SIZE + HASH_STRUCTURE_SIZE * structure_num;
-	for (int i = 0; i < batch_size; ++i)
-	{
-		int data_dim = batch->blobs_[label_blob_idx]->count() / batch->blobs_[label_blob_idx]->shape(0);
-		caffe_copy(data_dim,
-			&label_blob_.cpu_data()[m_batch_perm[i]
-			* data_dim], &batch->blobs_[label_blob_idx]->mutable_cpu_data()[i * data_dim]);
-	}
 }
 
 #ifdef CPU_ONLY

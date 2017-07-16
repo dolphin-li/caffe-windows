@@ -162,11 +162,17 @@ namespace caffe {
 		/********************4. compute final top (X-mean(X))/(sqrt(var(X)+eps))***********************/
 		// normalize variance
 		// div by sqrt(var(X)+eps)
-#if 0//dp
+#if 1//dp
 		inv_sqrt_eps_var_kernel << <CAFFE_GET_BLOCKS(channels_*total_defNum), CAFFE_CUDA_NUM_THREADS >> > (
 			temp_.mutable_gpu_data(), channels_, total_defNum, variance_.gpu_data(), eps_
 			);
-#else
+		//set variance to inV, which is used in BP
+		for (int c = 0; c < channels_; c++)
+		{
+			inv_sqrt_var_.mutable_cpu_data()[c] = 1.f / variance_.cpu_data()[c];
+			//printf("inv sqrt var %.6f\n", inv_sqrt_var_.cpu_data()[c]);
+		}
+#else	//tmp CPU code. In old version, DP's Backward GPU used inv_sqrt_var_, yet which is not initialized in forward
 		// normalize variance
 		caffe_add_scalar(variance_.count(), eps_, variance_.mutable_cpu_data());
 		caffe_powx(variance_.count(), variance_.cpu_data(), Dtype(0.5),
