@@ -23,7 +23,7 @@ void PoolHashLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 		printf("Fatal error: bottom size should be %d\n", HASH_DATA_SIZE + HASH_STRUCTURE_SIZE + HASH_STRUCTURE_SIZE);
 		exit(0);
 	}
-	if (top.size() != HASH_DATA_SIZE)
+	if (top.size() != HASH_DATA_SIZE && top.size() != HASH_DATA_SIZE + 1)	//the "1" is for output mask
 	{
 		printf("Fatal error: top size should be 1\n");
 		exit(0);
@@ -126,8 +126,10 @@ void PoolHashLayer<Dtype>::reshape_topHashData(const vector<Blob<Dtype>*>& botto
 	top[HASH_DATA_BLOB]->Reshape(hash_data_shape);
 	//memset(top[HASH_DATA_BLOB]->mutable_cpu_data(), 0, sizeof(Dtype)*batch_hash_size * top_channels);
 
-	//also reshape max_idx_
-	if (this->layer_param_.pooling_param().pool() == PoolingParameter_PoolMethod_MAX)
+	//also reshape mask
+	if (top.size() == HASH_DATA_SIZE + 1)
+		top[HASH_DATA_SIZE]->ReshapeLike(*top[HASH_DATA_BLOB]);
+	if (this->layer_param_.pooling_param().pool() == PoolingParameter_PoolMethod_MAX && top.size() == HASH_DATA_SIZE)
 	{
 		max_idx_.Reshape(hash_data_shape);
 	}	
@@ -190,7 +192,7 @@ void PoolHashLayer<Dtype>::forward_cpu_max(const float *bottom_hash, const unsig
 	const int bottom_r2 = bottom_r_bar * bottom_r_bar;
 	const int bottom_m2 = bottom_m_bar * bottom_m_bar;
 	//init mask
-	caffe_set(top_m*channels, -1, mask);
+	//caffe_set(top_m*channels, -1, mask); already set outside
 	//to be safe, init out to zero
 	memset(top_hash, 0, sizeof(float)*top_m*channels);
 	for (int v = 0; v < top_m; v++)
@@ -287,6 +289,130 @@ void PoolHashLayer<Dtype>::forward_cpu_max(const float *bottom_hash, const unsig
 	}
 }
 
+//added if we output mask to top
+template <typename Dtype>
+void PoolHashLayer<Dtype>::forward_cpu_max(const float *bottom_hash, const unsigned char *bottom_offset,
+	const PACKED_POSITION *bottom_posTag, int bottom_m_bar, int bottom_r_bar,
+	float *top_hash, const unsigned char *top_offset,
+	const PACKED_POSITION *top_posTag, int top_m_bar, int top_r_bar,
+	Dtype *top_mask,
+	int channels, int bt_dense_res)
+{
+	const int top_m = top_m_bar * top_m_bar * top_m_bar;
+	const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+	const int stride_x = stride_shape_.cpu_data()[0];
+	const int stride_y = stride_shape_.cpu_data()[1];
+	const int stride_z = stride_shape_.cpu_data()[2];
+
+	if (stride_x != stride_y || stride_x != stride_z)
+	{
+		printf("Fatal error: we only consider same strides!\n");
+		exit(0);
+	}
+
+	const int in = bt_dense_res;//input dense res
+	const int in2 = bt_dense_res*bt_dense_res;
+
+	const int bottom_r2 = bottom_r_bar * bottom_r_bar;
+	const int bottom_m2 = bottom_m_bar * bottom_m_bar;
+	//init mask
+	//caffe_set(top_m*channels, Dtype(-1), top_mask);	//already set outside
+	//to be safe, init out to zero
+	memset(top_hash, 0, sizeof(float)*top_m*channels);
+	for (int v = 0; v < top_m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&top_posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		float *tp_hash_ptr = &top_hash[v];
+		//init to min
+		for (int c = 0; c<channels; c++)
+		{
+			*tp_hash_ptr = -FLT_MAX;
+			tp_hash_ptr += top_m;
+		}
+
+		//get the real voxel position from the position tag
+		int cx, cy, cz;
+		xyz_from_pack(top_posTag[v], cx, cy, cz);	//get the voxel position mapped to this hash														
+
+		int min_x = cx * stride_x;
+		int min_y = cy * stride_y;
+		int min_z = cz * stride_z;
+
+		int x_end = min(min_x + stride_x, bt_dense_res);
+		int y_end = min(min_y + stride_y, bt_dense_res);
+		int z_end = min(min_z + stride_z, bt_dense_res);
+
+		min_x = max(min_x, 0);
+		min_y = max(min_y, 0);
+		min_z = max(min_z, 0);
+
+		int bt_mx, bt_my, bt_mz;
+
+		for (int nz = min_z; nz < z_end; ++nz)
+		{
+			const int depth_idx = nz * in2;
+			for (int ny = min_y; ny < y_end; ++ny)
+			{
+				const int height_idx = ny * in;
+				for (int nx = min_x; nx< x_end; ++nx)
+				{
+					const int dense_idx = depth_idx + height_idx + nx;
+
+					//hash to get hash position
+					Hash(nx, ny, nz, bt_mx, bt_my, bt_mz,
+						bottom_offset, bottom_m_bar, bottom_r_bar, bottom_r2);
+					const int bt_m_idx = NXYZ2I(bt_mx, bt_my, bt_mz, bottom_m_bar, bottom_m2);
+
+					if (!ishashVoxelDefined(&bottom_posTag[bt_m_idx]))	//the bottom hash voxel is undefined
+					{
+						continue;
+					}
+
+					int stored_x, stored_y, stored_z;
+					xyz_from_pack(bottom_posTag[bt_m_idx], stored_x, stored_y, stored_z);
+					if (nx != stored_x || ny != stored_y || nz != stored_z)	//undefined dense voxel
+					{
+						continue;
+					}
+
+					const float *bt_hash_ptr = &bottom_hash[bt_m_idx];
+					tp_hash_ptr = &top_hash[v];
+					Dtype *top_mask_ptr = &top_mask[v];
+					for (int c = 0; c < channels; c++)
+					{
+						if (*tp_hash_ptr < *bt_hash_ptr)
+						{
+							*tp_hash_ptr = *bt_hash_ptr;
+							*top_mask_ptr = bt_m_idx;
+						}
+						tp_hash_ptr += top_m;
+						top_mask_ptr += top_m;
+						bt_hash_ptr += bottom_m;
+					}
+				}
+			}
+		}
+#if USE_EMPTY_VALID_REGION
+		tp_hash_ptr = &top_hash[v];
+		//new added, for expanded empty valid regions, set to zero
+		if (*tp_hash_ptr == -FLT_MAX)
+		{
+			for (int c = 0; c<channels; c++)
+			{
+				*tp_hash_ptr = 0;
+				tp_hash_ptr += top_m;
+			}
+		}
+#endif
+	}
+}
+
 template <typename Dtype>
 void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 	const vector<Blob<Dtype>*>& top)
@@ -299,7 +425,19 @@ void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 	const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
 	const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
 
-	int *mask = max_idx_.mutable_cpu_data();
+	//int *mask = max_idx_.mutable_cpu_data();
+	// We'll output the mask to top[1] if it's of size >1.
+	const bool use_top_mask = top.size() == HASH_DATA_SIZE + 1;
+	int* mask = NULL;  // suppress warnings about uninitalized variables
+	Dtype* top_mask = NULL;
+	if (use_top_mask) {
+		top_mask = top[HASH_DATA_SIZE]->mutable_cpu_data();
+		caffe_set(top[HASH_DATA_SIZE]->count() , Dtype(-1), top_mask);	
+	}
+	else {
+		mask = max_idx_.mutable_cpu_data();
+		caffe_set(max_idx_.count(), -1, mask);			
+	}
 
 	int batch_num = bottom[M_BAR_BLOB]->shape(0);
 	const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
@@ -314,17 +452,28 @@ void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 		
 
 		float *cur_tp_hash = tp_hash;
-		int *cur_mask = mask;
 		const unsigned char*cur_tp_offset = tp_offset;
 		const PACKED_POSITION *cur_tp_postag = tp_posTag;
 		const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
 		const int tp_r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
 
-
-
-		forward_cpu_max(cur_bt_hash, cur_bt_offset, cur_bt_postag, bt_m_bar, bt_r_bar,
-			cur_tp_hash, cur_tp_offset, cur_tp_postag, tp_m_bar, tp_r_bar,
-			cur_mask, channels_, bt_dense_res);
+		int *cur_mask = NULL;
+		Dtype *cur_top_mask = NULL;
+		
+		if (use_top_mask)
+		{
+			cur_top_mask = top_mask;
+			forward_cpu_max(cur_bt_hash, cur_bt_offset, cur_bt_postag, bt_m_bar, bt_r_bar,
+				cur_tp_hash, cur_tp_offset, cur_tp_postag, tp_m_bar, tp_r_bar,
+				cur_top_mask, channels_, bt_dense_res);
+		}
+		else
+		{
+			cur_mask = mask;
+			forward_cpu_max(cur_bt_hash, cur_bt_offset, cur_bt_postag, bt_m_bar, bt_r_bar,
+				cur_tp_hash, cur_tp_offset, cur_tp_postag, tp_m_bar, tp_r_bar,
+				cur_mask, channels_, bt_dense_res);
+		}
 
 #if 0	//for debug
 		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
@@ -353,9 +502,15 @@ void PoolHashLayer<Dtype>::Forward_cpu_max(const vector<Blob<Dtype>*>& bottom,
 		const int tp_m = tp_m_bar * tp_m_bar * tp_m_bar;
 		const int tp_r = tp_r_bar * tp_r_bar * tp_r_bar;
 		tp_hash += tp_m * channels_;
-		mask += tp_m * channels_;
 		tp_offset += tp_r * 3;
 		tp_posTag += tp_m;
+
+		if (use_top_mask) {
+			top_mask += tp_m * channels_;
+		}
+		else {
+			mask += tp_m * channels_;
+		}
 	}
 
 #if 0
@@ -511,6 +666,63 @@ void PoolHashLayer<Dtype>::backward_cpu_max(float *bottom_dif, int bottom_m_bar,
 	}
 }
 
+
+//added for outputing mask to top
+template <typename Dtype>
+void PoolHashLayer<Dtype>::backward_cpu_max(float *bottom_dif, int bottom_m_bar,
+	const float *top_dif, const PACKED_POSITION *top_posTag, int top_m_bar,
+	const Dtype *top_mask, int channels)
+{
+	const int top_m = top_m_bar * top_m_bar * top_m_bar;
+	const int bottom_m = bottom_m_bar * bottom_m_bar * bottom_m_bar;
+	//init dif to zero
+	caffe_set(bottom_m*channels, (float)0, bottom_dif);
+	for (int v = 0; v < top_m; v++)
+	{
+		//if the hash voxel is undefined, skip
+		if (!ishashVoxelDefined(&top_posTag[v]))
+		{
+			continue;
+		}
+		///////////////////////////////////////////
+
+		const float *tp_dif_ptr = &top_dif[v];
+		const Dtype *top_mask_ptr = &top_mask[v];
+		float *bt_dif_start = bottom_dif;
+
+#if USE_EMPTY_VALID_REGION
+		if (*top_mask_ptr == -1)	//expanded regions, no parent
+		{
+
+		}
+		else
+		{
+			for (int c = 0; c < channels; c++)
+			{
+				const int bt_m_idx = *top_mask_ptr;
+
+				bt_dif_start[bt_m_idx] += *tp_dif_ptr;
+
+				tp_dif_ptr += top_m;
+				top_mask_ptr += top_m;
+				bt_dif_start += bottom_m;
+			}
+		}
+#else
+		for (int c = 0; c < channels; c++)
+		{
+			const int bt_m_idx = *mask_ptr;
+
+			bt_dif_start[bt_m_idx] += *tp_dif_ptr;
+
+			tp_dif_ptr += top_m;
+			mask_ptr += top_m;
+			bt_dif_start += bottom_m;
+		}
+#endif
+	}
+}
+
 template <typename Dtype>
 void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 	const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) 
@@ -523,7 +735,18 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 	const unsigned char*tp_offset = (const unsigned char *)bottom[OFFSET_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
 	const PACKED_POSITION *tp_posTag = (const PACKED_POSITION *)bottom[POSTAG_BLOB + HASH_STRUCTURE_SIZE]->cpu_data();
 
-	const int *mask = max_idx_.cpu_data();
+	const bool use_top_mask = top.size() == HASH_DATA_SIZE + 1;
+	const int* mask = NULL;  // suppress warnings about uninitalized variables
+	const Dtype* top_mask = NULL;
+	if (use_top_mask)
+	{
+		top_mask = top[HASH_DATA_SIZE]->cpu_data();
+	}
+	else
+	{
+		mask = max_idx_.cpu_data();
+	}
+	
 
 	int batch_num = (int)bottom[M_BAR_BLOB]->shape(0);
 	const int bt_dense_res = (int)bottom[DENSE_RES_BLOB]->cpu_data()[0];
@@ -539,15 +762,27 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 
 
 		const float *cur_tp_dif = tp_hash_dif;
-		const int *cur_mask = mask;
 		const unsigned char*cur_tp_offset = tp_offset;
 		const PACKED_POSITION *cur_tp_postag = tp_posTag;
 		const int tp_m_bar = (int)bottom[M_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
 		const int tp_r_bar = (int)bottom[R_BAR_BLOB + HASH_STRUCTURE_SIZE]->cpu_data()[i];
 
-		backward_cpu_max(cur_bt_dif, bt_m_bar, 
-			cur_tp_dif, cur_tp_postag, tp_m_bar, 
-			cur_mask, channels_);
+
+		
+		if (use_top_mask)
+		{
+			const Dtype *cur_top_mask = top_mask;
+			backward_cpu_max(cur_bt_dif, bt_m_bar,
+				cur_tp_dif, cur_tp_postag, tp_m_bar,
+				cur_top_mask, channels_);
+		}
+		else
+		{
+			const int *cur_mask = mask;
+			backward_cpu_max(cur_bt_dif, bt_m_bar,
+				cur_tp_dif, cur_tp_postag, tp_m_bar,
+				cur_mask, channels_);
+		}
 
 #if 0	//for debug
 		float *bt_dense_buf = new float[bt_dense_res * bt_dense_res * bt_dense_res * channels_];
@@ -597,9 +832,16 @@ void PoolHashLayer<Dtype>::Backward_cpu_max(const vector<Blob<Dtype>*>& top,
 		const int tp_m = tp_m_bar * tp_m_bar * tp_m_bar;
 		const int tp_r = tp_r_bar * tp_r_bar * tp_r_bar;
 		tp_hash_dif += tp_m * channels_;
-		mask += tp_m * channels_;
 		tp_offset += tp_r * 3;
 		tp_posTag += tp_m;
+		if (use_top_mask)
+		{
+			top_mask += tp_m * channels_;
+		}
+		else
+		{
+			mask += tp_m * channels_;
+		}
 	}
 }
 
